@@ -1,0 +1,79 @@
+# 智能学伴系统配置文件
+
+# ASR配置 (FunASR)
+asr:
+  model_name: "paraformer-zh"  # FunASR模型名称
+  model_revision: "v2.0.4"
+  device: "cuda"  # cuda 或 cpu
+  batch_size: 1
+  sample_rate: 16000
+  hotword: ""  # 热词，可提高特定词汇识别率
+  use_itn: true  # 是否使用逆文本归一化
+  
+# LLM配置
+llm:
+  provider: "deepseek"  # deepseek, qwen, 或其他
+  
+  # DeepSeek配置
+  deepseek:
+    api_key: ""  # 填入你的DeepSeek API Key
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+    temperature: 0.7
+    max_tokens: 2000
+    top_p: 0.95
+  
+  # Qwen配置
+  qwen:
+    api_key: ""  # 填入你的Qwen API Key
+    base_url: "https://dashscope.aliyuncs.com/api/v1"
+    model: "qwen-turbo"
+    temperature: 0.7
+    max_tokens: 2000
+    top_p: 0.8
+  
+  # 系统提示词
+  system_prompt: |
+    你是一个友好、耐心的智能学伴助手。你的任务是：
+    1. 用简洁、清晰的语言回答学生的问题
+    2. 鼓励学生独立思考，而不是直接给出答案
+    3. 用循序渐进的方式引导学习
+    4. 保持积极、鼓励的语气
+    5. 如果问题超出你的能力范围，诚实地告知
+    请用自然、口语化的方式回答，避免过长的回复（建议控制在100字以内）。
+
+# TTS配置 (IndexTTS2)
+tts:
+  model_path: "models/indextts2"  # IndexTTS2模型路径
+  config_path: "models/indextts2/config.json"
+  checkpoint_path: "models/indextts2/checkpoint.pth"
+  device: "cuda"  # cuda 或 cpu
+  speaker_id: 0  # 音色ID
+  speed: 1.0  # 语速：0.5-2.0
+  pitch: 1.0  # 音高：0.5-2.0
+  sample_rate: 22050
+  
+# 对话管道配置
+conversation:
+  max_history: 10  # 最大对话历史轮数
+  save_audio: true  # 是否保存音频
+  audio_output_dir: "data/audio_output"
+  audio_input_dir: "data/audio_input"
+  log_dir: "data/logs"
+  enable_vad: true  # 是否启用语音活动检测
+  vad_threshold: 0.5
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "data/logs/system.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# 性能配置
+performance:
+  use_fp16: true  # 使用半精度加速（需要GPU支持）
+  num_workers: 4  # 数据加载线程数
+  prefetch_factor: 2
+
