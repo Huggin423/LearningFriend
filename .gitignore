@@ -54,7 +54,7 @@ models/indextts2/*
 !models/indextts2/.gitkeep
 
 # 配置文件中的敏感信息
-# config/config.yaml  # 如果包含API密钥，考虑添加这行
+config/config.yaml  # 包含API密钥，不应提交到Git
 
 # 测试
 .pytest_cache/

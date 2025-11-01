@@ -1,4 +1,9 @@
-# 智能学伴系统配置文件
+# 智能学伴系统配置文件示例
+# 
+# 使用方法：
+# 1. 复制此文件为 config.yaml：cp config.yaml.example config.yaml
+# 2. 填入你的真实 API Key 和其他配置
+# 3. 注意：config.yaml 不会被提交到 Git（已在 .gitignore 中排除）
 
 # ASR配置 (FunASR)
 asr:
@@ -19,19 +24,28 @@ asr:
   # 标点恢复配置（可选）
   # punc_model: "ct-punc"       # 启用标点恢复
   # punc_kwargs: {}
-  
+
 # LLM配置
 llm:
   provider: "deepseek"  # deepseek, qwen, 或其他
   
   # DeepSeek配置（硅基流动）
   deepseek:
-    api_key: "sk-cqshjhsyysaccbhuqsqgbcaszdmtksadlnqhrxxddwzmvzfo"  # 硅基流动 API Key
+    api_key: "YOUR_API_KEY_HERE"  # ⚠️ 请替换为你的硅基流动 API Key
     base_url: "https://api.siliconflow.com/v1/chat/completions"  # 硅基流动API地址
     model: "deepseek-ai/DeepSeek-V3"  # DeepSeek-V3模型
     temperature: 0.7
     max_tokens: 2000
     top_p: 0.95
+  
+  # Qwen配置（可选）
+  # qwen:
+  #   api_key: "YOUR_QWEN_API_KEY_HERE"
+  #   base_url: "https://dashscope.aliyuncs.com/api/v1"
+  #   model: "qwen-turbo"
+  #   temperature: 0.7
+  #   max_tokens: 2000
+  #   top_p: 0.8
   
   # 系统提示词
   system_prompt: |
