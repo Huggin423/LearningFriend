@@ -7,6 +7,7 @@ torchaudio>=2.0.0
 # FunASR相关
 funasr>=1.0.0
 modelscope>=1.9.0
+addict>=2.4.0  # ModelScope依赖
 
 # LLM API调用
 openai>=1.0.0  # DeepSeek和Qwen都兼容OpenAI接口

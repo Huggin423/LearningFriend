@@ -44,7 +44,6 @@ class IndexTTS2ModelScope:
         try:
             from modelscope.hub.snapshot_download import snapshot_download
             from modelscope.pipelines import pipeline
-            from modelscope.utils.constant import Tasks
             
             logger.info("正在从 ModelScope 加载 IndexTTS2 模型...")
             
@@ -52,18 +51,33 @@ class IndexTTS2ModelScope:
             model_id = "IndexTeam/IndexTTS-2"
             
             # 检查模型是否已下载
-            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
-                logger.info("模型未找到，正在从 ModelScope 下载...")
-                snapshot_download(
-                    model_id, 
-                    cache_dir=str(self.model_dir),
-                    local_files_only=False
-                )
+            model_path_or_id = model_id  # 默认使用 model_id，让 ModelScope 处理缓存
+            if self.model_dir.exists() and any(self.model_dir.iterdir()):
+                # 如果本地目录存在且有文件，优先使用本地路径
+                logger.info(f"使用本地模型目录: {self.model_dir}")
+                model_path_or_id = str(self.model_dir)
+            else:
+                logger.info("模型未找到，将从 ModelScope 自动下载...")
+                # 下载到指定目录
+                try:
+                    snapshot_download(
+                        model_id, 
+                        cache_dir=str(self.model_dir),
+                        local_files_only=False
+                    )
+                    # 下载后使用本地路径
+                    if self.model_dir.exists() and any(self.model_dir.iterdir()):
+                        model_path_or_id = str(self.model_dir)
+                except Exception as e:
+                    logger.warning(f"下载到指定目录失败，将使用 ModelScope 默认缓存: {e}")
+                    # 如果下载失败，仍然使用 model_id，ModelScope 会使用默认缓存
+                    model_path_or_id = model_id
             
             # 创建 TTS pipeline
+            # 使用字符串 "text-to-speech" 作为任务名，因为 Tasks.text_to_speech 可能不可用
             self.pipeline = pipeline(
-                Tasks.text_to_speech,
-                model=str(self.model_dir),
+                task="text-to-speech",  # 使用字符串而不是 Tasks 常量
+                model=model_path_or_id,
                 device=self.device
             )
             
