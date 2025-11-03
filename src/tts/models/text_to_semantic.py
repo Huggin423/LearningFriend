@@ -286,7 +286,24 @@ class TextToSemanticModule(nn.Module):
         
         # 初始化序列
         seq_parts = []
-        combined = speaker_embedding + (emotion_embedding if emotion_embedding is not None else 0)
+        
+        # 确保嵌入向量的维度一致
+        if speaker_embedding.dim() == 1:
+            speaker_embedding = speaker_embedding.unsqueeze(0)  # [1, d_model]
+        
+        if emotion_embedding is not None:
+            if emotion_embedding.dim() == 1:
+                emotion_embedding = emotion_embedding.unsqueeze(0)  # [1, d_model]
+            # 确保维度匹配
+            if speaker_embedding.size(-1) != emotion_embedding.size(-1):
+                raise ValueError(
+                    f"Speaker embedding dimension ({speaker_embedding.size(-1)}) "
+                    f"does not match emotion embedding dimension ({emotion_embedding.size(-1)})"
+                )
+            combined = speaker_embedding + emotion_embedding
+        else:
+            combined = speaker_embedding
+        
         seq_parts.append(combined.unsqueeze(1))
         
         # 时长控制

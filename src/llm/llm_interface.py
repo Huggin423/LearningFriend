@@ -43,6 +43,16 @@ class LLMInterface:
                 if not api_key:
                     logger.warning("DeepSeek API Key未配置！请在config.yaml中填写")
                 
+                # 验证并清理 base_url（OpenAI客户端会自动添加 /chat/completions）
+                if '/chat/completions' in base_url:
+                    logger.warning(
+                        f"检测到 base_url 包含 '/chat/completions'，这将导致404错误。"
+                        f"已将 base_url 从 '{base_url}' 修正为正确的格式。"
+                    )
+                    base_url = base_url.replace('/chat/completions', '').rstrip('/')
+                    if not base_url.endswith('/v1'):
+                        base_url = base_url.rstrip('/') + '/v1'
+                
                 # DeepSeek使用OpenAI兼容接口
                 self.client = OpenAI(
                     api_key=api_key,

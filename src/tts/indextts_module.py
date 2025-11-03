@@ -194,6 +194,12 @@ class IndexTTS2Reimplement:
                 target_token_num = self._duration_to_tokens(target_duration)
             
             # 5. Text-to-Semantic: 生成语义token
+            # 确保嵌入向量是正确的格式 [1, d_model] 用于 generate 方法
+            if speaker_embedding.dim() == 1:
+                speaker_embedding = speaker_embedding.unsqueeze(0)
+            if emotion_embedding is not None and emotion_embedding.dim() == 1:
+                emotion_embedding = emotion_embedding.unsqueeze(0)
+            
             with torch.no_grad():
                 semantic_tokens, gpt_latents = self.t2s_module.generate(
                     text_tokens=text_tokens,
@@ -245,9 +251,15 @@ class IndexTTS2Reimplement:
             mel = self.audio_processor.audio_to_mel(timbre_prompt)
             mel = torch.FloatTensor(mel).unsqueeze(0).to(self.device)
             speaker_embedding = self.t2s_module.speaker_conditioner(mel)
+            # 确保是2D张量 [1, d_model]
+            if speaker_embedding.dim() == 1:
+                speaker_embedding = speaker_embedding.unsqueeze(0)
         else:
             # 使用预定义的说话人ID
             speaker_embedding = self.t2s_module.speaker_conditioner.get_speaker_embedding(speaker_id)
+            # 确保是2D张量 [1, d_model]
+            if speaker_embedding.dim() == 1:
+                speaker_embedding = speaker_embedding.unsqueeze(0)
         
         return speaker_embedding
     
@@ -268,9 +280,31 @@ class IndexTTS2Reimplement:
             emotion_probs = self.t2e_module.predict_emotion(text if emotion == 'auto' else emotion)
             emotion_embedding = self.t2e_module.get_emotion_embedding(emotion_probs)
             emotion_embedding = emotion_embedding.to(self.device)
+            
+            # 检查维度匹配：如果T2E模块输出维度与T2S模块不匹配，需要投影
+            target_dim = self.config.get('t2s_d_model', 512)
+            if emotion_embedding.dim() == 1:
+                emotion_embedding_dim = emotion_embedding.size(0)
+            else:
+                emotion_embedding_dim = emotion_embedding.size(-1)
+            
+            if emotion_embedding_dim != target_dim:
+                # 添加投影层转换维度（如果还没有）
+                if not hasattr(self, '_emotion_projection'):
+                    self._emotion_projection = torch.nn.Linear(emotion_embedding_dim, target_dim).to(self.device)
+                # 确保是2D张量用于投影
+                was_1d = emotion_embedding.dim() == 1
+                if was_1d:
+                    emotion_embedding = emotion_embedding.unsqueeze(0)
+                emotion_embedding = self._emotion_projection(emotion_embedding)
+                # 保持2D格式 [1, d_model]，后续代码会处理
+                logger.debug(f"已将emotion_embedding维度从{emotion_embedding_dim}投影到{target_dim}")
         else:
             # 使用默认中性情感
             emotion_embedding = self.t2s_module.emotion_conditioner.get_emotion_embedding('neutral')
+            # 确保是2D张量 [1, d_model]
+            if emotion_embedding.dim() == 1:
+                emotion_embedding = emotion_embedding.unsqueeze(0)
         
         return emotion_embedding
     
