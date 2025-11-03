@@ -240,7 +240,7 @@ class IndexTTS2Official:
             logger.error(f"下载模型失败: {str(e)}")
             raise
     
-    def _load_official_inference(self):
+    def _load_official_inference(self):nn
         """加载官方推理接口"""
         try:
             # 首先检查仓库是否存在
@@ -256,11 +256,13 @@ class IndexTTS2Official:
             
             # 查找可能的推理文件位置
             possible_inference_files = [
-                self.official_repo_path / "inference.py",
+                self.official_repo_path / "indextts" / "infer_v2.py",  # 最新版本
+                self.official_repo_path / "indextts" / "infer.py",  # 标准版本
+                self.official_repo_path / "index_tts" / "infer.py",
                 self.official_repo_path / "index_tts" / "inference.py",
+                self.official_repo_path / "inference.py",
                 self.official_repo_path / "src" / "inference.py",
                 self.official_repo_path / "infer.py",
-                self.official_repo_path / "index_tts" / "infer.py",
             ]
             
             inference_file = None
@@ -298,23 +300,57 @@ class IndexTTS2Official:
                     inference_file
                 )
                 inference_module = importlib.util.module_from_spec(spec)
+                
+                # 如果文件在 indextts 子目录，需要添加父目录到路径
+                if 'indextts' in str(inference_file.parent):
+                    parent_dir = inference_file.parent.parent
+                    if str(parent_dir) not in sys.path:
+                        sys.path.insert(0, str(parent_dir))
+                
                 spec.loader.exec_module(inference_module)
                 
-                # 尝试多种可能的类名
-                for class_name in ['IndexTTSInference', 'Inference', 'IndexTTS', 'TTSInference']:
-                    if hasattr(inference_module, class_name):
-                        inference_class = getattr(inference_module, class_name)
-                        logger.debug(f"找到推理类: {class_name}")
-                        break
+                # 尝试多种可能的类名和函数名
+                possible_names = [
+                    'IndexTTSInference', 'IndexTTS', 'Inference', 
+                    'TTSInference', 'infer', 'InferV2', 'Infer'
+                ]
                 
-                if inference_class is None:
-                    raise AttributeError("找不到推理类")
+                inference_obj = None
+                for name in possible_names:
+                    if hasattr(inference_module, name):
+                        obj = getattr(inference_module, name)
+                        # 检查是类还是函数
+                        if isinstance(obj, type):
+                            inference_class = obj
+                            logger.debug(f"找到推理类: {name}")
+                            break
+                        else:
+                            # 可能是函数，包装为类
+                            inference_obj = obj
+                            logger.debug(f"找到推理函数: {name}")
+                    
+                if inference_class is None and inference_obj is None:
+                    # 列出模块中所有可用的名称，帮助诊断
+                    available_names = [name for name in dir(inference_module) 
+                                     if not name.startswith('_')]
+                    logger.warning(f"模块中可用的名称: {available_names[:10]}")
+                    raise AttributeError("找不到推理类或函数")
+                
+                # 如果是函数而不是类，需要进一步处理
+                if inference_obj and not inference_class:
+                    logger.warning(f"检测到推理函数而非类，可能需要不同的调用方式")
+                    # 尝试检查是否有其他类可用
+                    # 或者直接使用函数（需要适配）
                     
             except Exception as e1:
                 # 方式2: 尝试作为模块导入
                 try:
                     # 根据文件位置决定导入路径
-                    if 'index_tts' in str(inference_file):
+                    if 'indextts/infer_v2.py' in str(inference_file):
+                        from indextts.infer_v2 import IndexTTSInference
+                    elif 'indextts/infer.py' in str(inference_file):
+                        from indextts.infer import IndexTTSInference
+                    elif 'index_tts' in str(inference_file):
                         from index_tts.inference import IndexTTSInference
                     else:
                         from inference import IndexTTSInference
@@ -324,6 +360,8 @@ class IndexTTS2Official:
                     logger.error(f"所有导入方式都失败:")
                     logger.error(f"  文件导入失败: {e1}")
                     logger.error(f"  模块导入失败: {e2}")
+                    
+                    # 如果找到了文件但导入失败，提供更详细的错误信息
                     raise ImportError("无法导入官方推理模块")
             
             # 初始化推理器
@@ -338,12 +376,33 @@ class IndexTTS2Official:
             if config_path.exists():
                 init_params['config_path'] = str(config_path)
             
+            # 尝试不同的初始化方式
             try:
                 self.inference = inference_class(**init_params)
-            except TypeError:
-                # 如果参数不匹配，尝试不传config_path
-                init_params.pop('config_path', None)
-                self.inference = inference_class(**init_params)
+            except TypeError as e1:
+                # 尝试不传config_path
+                try:
+                    init_params.pop('config_path', None)
+                    self.inference = inference_class(**init_params)
+                except TypeError as e2:
+                    # 尝试不同的参数组合
+                    try:
+                        # 可能只需要 checkpoint_dir
+                        self.inference = inference_class(checkpoint_dir=str(self.model_dir))
+                    except Exception as e3:
+                        logger.error(f"初始化推理器失败:")
+                        logger.error(f"  尝试1: {e1}")
+                        logger.error(f"  尝试2: {e2}")
+                        logger.error(f"  尝试3: {e3}")
+                        logger.error(f"可用参数: {init_params}")
+                        # 列出类的签名，帮助诊断
+                        import inspect
+                        try:
+                            sig = inspect.signature(inference_class.__init__)
+                            logger.error(f"构造函数签名: {sig}")
+                        except:
+                            pass
+                        raise
             
             logger.info("✓ 官方推理接口加载成功")
             
