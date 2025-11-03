@@ -61,10 +61,20 @@ llm:
 # 使用 ModelScope 官方 IndexTTS2 模型
 tts:
   # ========== 模型配置 ==========
-  # 模型路径（从 ModelScope 下载后会自动保存到这里）
+  # 模式选择：
+  #   - 本地模式：使用已下载的本地模型（推荐，更快）
+  #   - Hub 模式：从 ModelScope 自动下载模型
+  use_local: true  # true=本地模式（需要 model_path 指向已下载的模型），false=Hub模式（自动下载）
+  
+  # 本地模型路径（本地模式必需）
   model_path: "models/indextts2"
-  # 模型会自动从 ModelScope 下载：IndexTeam/IndexTTS-2
-  # 首次使用会自动下载约5.9GB
+  
+  # Hub 模型 ID（Hub 模式使用）
+  model: "IndexTeam/IndexTTS-2"
+  
+  # 注意：
+  # - 本地模式：确保 model_path 指向已下载的完整模型目录
+  # - Hub 模式：首次使用会自动下载约5.9GB，下载后也会使用本地缓存
   
   # ========== 通用配置 ==========
   device: "cuda"  # cuda 或 cpu（自动检测）

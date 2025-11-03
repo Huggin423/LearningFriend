@@ -23,184 +23,266 @@ class IndexTTS2ModelScope:
         
         Args:
             config: 配置字典
+                - model_path: 本地模型路径（如果使用本地模型）
+                - model: 模型 ID（如 "IndexTeam/IndexTTS-2"），如果使用 hub 模型
+                - use_local: 是否强制使用本地模式（默认根据 model_path 自动判断）
         """
         self.config = config
         self.device = config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
         self.sample_rate = config.get('sample_rate', 22050)
         self.speed = config.get('speed', 1.0)
         
-        # 模型路径（转换为绝对路径）
+        # 判断使用本地模型还是 hub 模型
+        self.use_local = config.get('use_local', None)  # None 表示自动判断
         model_path = config.get('model_path', 'models/indextts2')
-        # 如果是相对路径，转换为相对于项目根目录的绝对路径
-        if not os.path.isabs(model_path):
-            project_root = Path(__file__).parent.parent.parent
-            self.model_dir = (project_root / model_path).resolve()
+        model_id = config.get('model', 'IndexTeam/IndexTTS-2')
+        
+        # 详细日志
+        logger.info("=" * 60)
+        logger.info("IndexTTS2 初始化配置")
+        logger.info(f"  model_path: {model_path}")
+        logger.info(f"  model (ID): {model_id}")
+        logger.info(f"  use_local: {self.use_local}")
+        logger.info(f"  device: {self.device}")
+        logger.info("=" * 60)
+        
+        # 如果未指定 use_local，根据 model_path 是否存在自动判断
+        if self.use_local is None:
+            if not os.path.isabs(model_path):
+                project_root = Path(__file__).parent.parent.parent
+                model_path_abs = (project_root / model_path).resolve()
+            else:
+                model_path_abs = Path(model_path).resolve()
+            
+            # 如果路径存在且有文件，使用本地模式
+            self.use_local = model_path_abs.exists() and any(model_path_abs.iterdir())
+            logger.info(f"自动判断模式: {'本地模式' if self.use_local else 'Hub 模式'}")
+        
+        # 设置模型目录
+        if self.use_local:
+            # 本地模式：使用 model_path
+            if not os.path.isabs(model_path):
+                project_root = Path(__file__).parent.parent.parent
+                self.model_dir = (project_root / model_path).resolve()
+            else:
+                self.model_dir = Path(model_path).resolve()
+            logger.info(f"本地模式 - 模型目录: {self.model_dir}")
         else:
-            self.model_dir = Path(model_path).resolve()
+            # Hub 模式：先设置临时目录，后续会下载
+            if not os.path.isabs(model_path):
+                project_root = Path(__file__).parent.parent.parent
+                self.model_dir = (project_root / model_path).resolve()
+            else:
+                self.model_dir = Path(model_path).resolve()
+            self.model_id = model_id
+            logger.info(f"Hub 模式 - 模型 ID: {self.model_id}, 缓存目录: {self.model_dir}")
         
         # 初始化模型
         self._load_model()
         
-        logger.info("IndexTTS2 ModelScope模型初始化成功")
-        logger.info(f"设备: {self.device}")
-        logger.info(f"模型目录: {self.model_dir}")
+        logger.info("✓ IndexTTS2 ModelScope模型初始化成功")
+        logger.info(f"  设备: {self.device}")
+        logger.info(f"  模型目录: {self.model_dir}")
     
     def _load_model(self):
-        """从 ModelScope 下载模型，然后使用 IndexTTS2 官方代码加载"""
+        """加载 IndexTTS2 模型（支持本地模式和 Hub 模式）"""
         try:
-            from modelscope.hub.snapshot_download import snapshot_download
-            
-            logger.info("正在从 ModelScope 下载 IndexTTS2 模型...")
-            
-            # 下载或加载模型
-            model_id = "IndexTeam/IndexTTS-2"
-            
-            # 检查模型是否已下载
-            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
-                logger.info("模型未找到，正在从 ModelScope 下载...")
-                try:
-                    snapshot_download(
-                        model_id, 
-                        cache_dir=str(self.model_dir),
-                        local_files_only=False
-                    )
-                    logger.info("✓ 模型下载完成")
-                except Exception as e:
-                    logger.warning(f"下载到指定目录失败: {e}")
-                    # 检查是否在默认缓存位置
-                    import os
-                    default_cache = os.path.expanduser("~/.cache/modelscope/hub/" + model_id.replace("/", "--"))
-                    if os.path.exists(default_cache):
-                        logger.info(f"使用 ModelScope 默认缓存位置: {default_cache}")
-                        self.model_dir = Path(default_cache)
+            # 根据模式加载模型
+            if self.use_local:
+                self._load_local_model()
+            else:
+                self._load_from_hub()
             
             # 确保模型目录存在且有文件
             if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
                 raise FileNotFoundError(
                     f"模型目录为空或不存在: {self.model_dir}\n"
-                    f"请手动下载模型或检查 ModelScope 配置"
+                    f"请检查模型路径或重新下载模型"
                 )
             
-            # 查找配置文件
-            config_path = None
-            possible_config_paths = [
-                self.model_dir / "config.yaml",
-                self.model_dir / "IndexTeam" / "IndexTTS-2" / "config.yaml",
-            ]
+            # 查找并准备配置文件
+            config_path = self._find_and_prepare_config()
             
-            for path in possible_config_paths:
-                if path.exists():
-                    config_path = path
-                    logger.info(f"找到配置文件: {config_path}")
-                    break
-            
-            if config_path is None:
-                # 如果找不到配置文件，尝试在模型目录的子目录中查找
-                for subdir in self.model_dir.iterdir():
-                    if subdir.is_dir():
-                        sub_config = subdir / "config.yaml"
-                        if sub_config.exists():
-                            config_path = sub_config
-                            self.model_dir = subdir.resolve()  # 更新模型目录（使用绝对路径）
-                            logger.info(f"在子目录中找到配置文件: {config_path}")
-                            break
-            
-            if config_path is None:
-                raise FileNotFoundError(
-                    f"找不到配置文件 config.yaml\n"
-                    f"请检查模型目录: {self.model_dir}"
-                )
-            
-            # 修复配置文件中的路径问题（如果 qwen_emo_path 末尾有斜杠）
-            # 读取并修复配置文件，确保路径格式正确
-            try:
-                import yaml
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config_content = yaml.safe_load(f)
-                
-                # 检查并修复 qwen_emo_path
-                if config_content and 'qwen_emo_path' in config_content:
-                    qwen_path = config_content['qwen_emo_path']
-                    if isinstance(qwen_path, str) and qwen_path.endswith('/'):
-                        # 移除末尾斜杠
-                        config_content['qwen_emo_path'] = qwen_path.rstrip('/')
-                        # 创建临时配置文件
-                        import tempfile
-                        temp_config = tempfile.NamedTemporaryFile(
-                            mode='w', 
-                            suffix='.yaml', 
-                            delete=False,
-                            dir=str(Path(config_path).parent)
-                        )
-                        yaml.dump(config_content, temp_config, default_flow_style=False, allow_unicode=True)
-                        temp_config.close()
-                        config_path = Path(temp_config.name)
-                        logger.info(f"已修复配置文件中的路径，使用临时配置文件: {config_path}")
-            except Exception as e:
-                logger.warning(f"无法修复配置文件路径: {e}，使用原始配置文件")
-            
-            # 添加 index-tts 到 Python 路径
-            project_root = Path(__file__).parent.parent.parent
-            indextts_path = project_root / "index-tts"
-            if indextts_path.exists():
-                if str(indextts_path) not in sys.path:
-                    sys.path.insert(0, str(indextts_path))
-            else:
-                logger.warning(f"index-tts 目录不存在: {indextts_path}")
-                logger.warning("尝试使用已安装的 indextts 包")
-            
-            # 使用 IndexTTS2 官方代码加载模型
-            logger.info("使用 IndexTTS2 官方代码加载模型...")
-            from indextts.infer_v2 import IndexTTS2
-            
-            # 确保使用绝对路径，并移除尾随斜杠
-            config_path_abs = Path(config_path).resolve()
-            model_dir_abs = Path(self.model_dir).resolve()
-            
-            # 移除路径末尾的斜杠，避免 transformers 误判
-            # 使用 Path 对象避免手动处理斜杠问题
-            model_dir_str = str(model_dir_abs).rstrip('/\\')  # 同时移除 Unix 和 Windows 路径分隔符
-            config_path_str = str(config_path_abs)
-            
-            logger.info(f"使用配置文件: {config_path_str}")
-            logger.info(f"使用模型目录: {model_dir_str}")
-            
-            # 验证模型目录存在必要的文件
-            model_dir_path = Path(model_dir_str)
-            if not model_dir_path.exists():
-                raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
-            
-            # 检查 Qwen 模型路径（如果配置中有的话）
-            # 这里无法直接读取配置文件，但可以在日志中提示
-            qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
-            if qwen_emo_expected.exists():
-                qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
-                logger.info(f"检测到 Qwen 模型路径: {qwen_emo_path_str}")
-            else:
-                logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
-            
-            # 初始化 IndexTTS2
-            self.tts_model = IndexTTS2(
-                cfg_path=config_path_str,
-                model_dir=model_dir_str,
-                use_fp16=self.config.get('use_fp16', False),
-                device=self.device,
-                use_cuda_kernel=self.config.get('use_cuda_kernel', None),
-            )
-            
-            logger.info("✓ 模型加载成功")
+            # 添加 index-tts 到 Python 路径并加载模型
+            self._setup_indextts_and_load(config_path)
             
         except ImportError as e:
             logger.error(f"导入失败: {str(e)}")
             logger.error("请确保已安装所需依赖:")
             logger.error("  pip install modelscope")
-            logger.error("  pip install indextts (如果可用)")
+            logger.error("  pip install transformers==4.52.1")
             raise
         except Exception as e:
             logger.error(f"加载模型失败: {str(e)}")
             import traceback
             logger.debug(traceback.format_exc())
             raise
+    
+    def _load_from_hub(self):
+        """从 ModelScope Hub 下载模型"""
+        from modelscope.hub.snapshot_download import snapshot_download
+        
+        logger.info(f"Hub 模式：从 ModelScope 下载模型 {self.model_id}...")
+        
+        # 检查模型是否已下载
+        if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
+            logger.info("模型未找到，正在从 ModelScope 下载...")
+            try:
+                snapshot_download(
+                    self.model_id, 
+                    cache_dir=str(self.model_dir),
+                    local_files_only=False
+                )
+                logger.info("✓ 模型下载完成")
+            except Exception as e:
+                logger.warning(f"下载到指定目录失败: {e}")
+                # 检查是否在默认缓存位置
+                default_cache = os.path.expanduser("~/.cache/modelscope/hub/" + self.model_id.replace("/", "--"))
+                if os.path.exists(default_cache):
+                    logger.info(f"使用 ModelScope 默认缓存位置: {default_cache}")
+                    self.model_dir = Path(default_cache)
+        else:
+            logger.info(f"使用已存在的本地模型: {self.model_dir}")
+    
+    def _load_local_model(self):
+        """加载本地已下载的模型"""
+        logger.info(f"本地模式：使用本地模型路径 {self.model_dir}")
+        
+        # 验证模型目录存在
+        if not self.model_dir.exists():
+            raise FileNotFoundError(
+                f"本地模型目录不存在: {self.model_dir}\n"
+                f"请检查 model_path 配置或先下载模型"
+            )
+        
+        if not any(self.model_dir.iterdir()):
+            raise FileNotFoundError(
+                f"本地模型目录为空: {self.model_dir}\n"
+                f"请确保模型文件已正确下载到此目录"
+            )
+        
+        logger.info(f"✓ 本地模型目录验证通过: {self.model_dir}")
+    
+    def _find_and_prepare_config(self):
+        """查找并准备配置文件"""
+        # 查找配置文件
+        config_path = None
+        possible_config_paths = [
+            self.model_dir / "config.yaml",
+            self.model_dir / "IndexTeam" / "IndexTTS-2" / "config.yaml",
+        ]
+        
+        for path in possible_config_paths:
+            if path.exists():
+                config_path = path
+                logger.info(f"找到配置文件: {config_path}")
+                break
+        
+        if config_path is None:
+            # 如果找不到配置文件，尝试在模型目录的子目录中查找
+            for subdir in self.model_dir.iterdir():
+                if subdir.is_dir():
+                    sub_config = subdir / "config.yaml"
+                    if sub_config.exists():
+                        config_path = sub_config
+                        self.model_dir = subdir.resolve()  # 更新模型目录（使用绝对路径）
+                        logger.info(f"在子目录中找到配置文件: {config_path}")
+                        break
+        
+        if config_path is None:
+            raise FileNotFoundError(
+                f"找不到配置文件 config.yaml\n"
+                f"请检查模型目录: {self.model_dir}"
+            )
+        
+        # 修复配置文件中的路径问题（如果 qwen_emo_path 末尾有斜杠）
+        # 读取并修复配置文件，确保路径格式正确
+        try:
+            import yaml
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_content = yaml.safe_load(f)
+            
+            # 检查并修复 qwen_emo_path
+            if config_content and 'qwen_emo_path' in config_content:
+                qwen_path = config_content['qwen_emo_path']
+                if isinstance(qwen_path, str) and qwen_path.endswith('/'):
+                    # 移除末尾斜杠
+                    config_content['qwen_emo_path'] = qwen_path.rstrip('/')
+                    # 创建临时配置文件
+                    import tempfile
+                    temp_config = tempfile.NamedTemporaryFile(
+                        mode='w', 
+                        suffix='.yaml', 
+                        delete=False,
+                        dir=str(Path(config_path).parent)
+                    )
+                    yaml.dump(config_content, temp_config, default_flow_style=False, allow_unicode=True)
+                    temp_config.close()
+                    config_path = Path(temp_config.name)
+                    logger.info(f"已修复配置文件中的路径（移除 qwen_emo_path 末尾斜杠），使用临时配置文件: {config_path}")
+        except Exception as e:
+            logger.warning(f"无法修复配置文件路径: {e}，使用原始配置文件")
+        
+        return config_path
+    
+    def _setup_indextts_and_load(self, config_path: Path):
+        """设置 index-tts 路径并加载模型"""
+        # 添加 index-tts 到 Python 路径
+        project_root = Path(__file__).parent.parent.parent
+        indextts_path = project_root / "index-tts"
+        if indextts_path.exists():
+            if str(indextts_path) not in sys.path:
+                sys.path.insert(0, str(indextts_path))
+            logger.info(f"添加 index-tts 路径: {indextts_path}")
+        else:
+            logger.warning(f"index-tts 目录不存在: {indextts_path}")
+            logger.warning("尝试使用已安装的 indextts 包")
+        
+        # 使用 IndexTTS2 官方代码加载模型
+        logger.info("使用 IndexTTS2 官方代码加载模型（本地模式）...")
+        from indextts.infer_v2 import IndexTTS2
+        
+        # 确保使用绝对路径，并移除尾随斜杠
+        config_path_abs = Path(config_path).resolve()
+        model_dir_abs = Path(self.model_dir).resolve()
+        
+        # 移除路径末尾的斜杠，避免 transformers 误判
+        model_dir_str = str(model_dir_abs).rstrip('/\\')  # 同时移除 Unix 和 Windows 路径分隔符
+        config_path_str = str(config_path_abs)
+        
+        logger.info(f"使用配置文件: {config_path_str}")
+        logger.info(f"使用模型目录: {model_dir_str}")
+        
+        # 验证模型目录存在必要的文件
+        model_dir_path = Path(model_dir_str)
+        if not model_dir_path.exists():
+            raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
+        
+        # 检查 Qwen 模型路径（如果配置中有的话）
+        qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
+        if qwen_emo_expected.exists():
+            qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
+            logger.info(f"✓ 检测到 Qwen 模型路径: {qwen_emo_path_str}")
+            # 验证关键文件是否存在
+            tokenizer_config = qwen_emo_expected / "tokenizer_config.json"
+            if tokenizer_config.exists():
+                logger.info(f"  - tokenizer_config.json 存在")
+            else:
+                logger.warning(f"  - tokenizer_config.json 不存在，可能会影响加载")
+        else:
+            logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
+        
+        # 初始化 IndexTTS2（本地模式）
+        logger.info("正在初始化 IndexTTS2（使用本地模型路径）...")
+        self.tts_model = IndexTTS2(
+            cfg_path=config_path_str,
+            model_dir=model_dir_str,  # 使用清理过的路径，确保没有尾随斜杠
+            use_fp16=self.config.get('use_fp16', False),
+            device=self.device,
+            use_cuda_kernel=self.config.get('use_cuda_kernel', None),
+        )
+        
+        logger.info("✓ IndexTTS2 模型加载成功")
     
     def synthesize(
         self,

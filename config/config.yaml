@@ -44,13 +44,17 @@ llm:
     请用自然、口语化的方式回答，避免过长的回复（建议控制在100字以内）。
 
 # TTS配置 (IndexTTS2)
-# 使用 ModelScope 官方 IndexTTS2 模型
+# 使用本地已下载的 IndexTTS2 模型
 tts:
   # ========== 模型配置 ==========
-  # 模型路径（从 ModelScope 下载后会自动保存到这里）
+  # 使用本地模式（推荐，使用已下载的模型）
+  use_local: true  # true=本地模式，false=从 ModelScope 自动下载
+  
+  # 本地模型路径（指向已下载的模型目录）
   model_path: "models/indextts2"
-  # 模型会自动从 ModelScope 下载：IndexTeam/IndexTTS-2
-  # 首次使用会自动下载约5.9GB
+  
+  # Hub 模型 ID（仅在 Hub 模式时使用）
+  model: "IndexTeam/IndexTTS-2"
   
   # ========== 通用配置 ==========
   device: "cuda"  # cuda 或 cpu（自动检测）
