@@ -360,12 +360,16 @@ cat data/logs/system.log
 ffmpeg -i input.mp3 -ar 16000 -ac 1 -sample_fmt s16 output.wav
 ```
 
-### IndexTTS2返回静音？
+### IndexTTS2返回静音或模型下载失败？
 
-**现象**：输出的音频是静音
+**现象**：输出的音频是静音，或模型下载失败
 
 **解决**：
 - 如果使用官方模型，检查是否正确安装和下载模型
+- **手动下载模型**：查看 [手动下载指南](docs/MANUAL_DOWNLOAD_TTS.md) 或运行：
+  ```bash
+  python scripts/download_indextts2_manual.py
+  ```
 - 如果使用复现模型，需要等待官方发布预训练权重
 - 查看 `src/tts/README.md` 了解详细集成步骤
 

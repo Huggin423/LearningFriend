@@ -181,6 +181,9 @@ class TextToSemanticModule(nn.Module):
         
         # 说话人分类器（用于对抗训练）
         self.speaker_classifier = nn.Linear(d_model, self.speaker_conditioner.n_speakers)
+        
+        # 将模型移动到指定设备
+        self.to(device)
     
     def forward(
         self,
