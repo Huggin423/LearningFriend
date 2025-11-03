@@ -123,10 +123,10 @@ class IndexTTS2ModelScope:
         from modelscope.hub.snapshot_download import snapshot_download
         
         logger.info(f"Hub 模式：从 ModelScope 下载模型 {self.model_id}...")
-        
-        # 检查模型是否已下载
-        if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
-            logger.info("模型未找到，正在从 ModelScope 下载...")
+            
+            # 检查模型是否已下载
+            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
+                logger.info("模型未找到，正在从 ModelScope 下载...")
             try:
                 snapshot_download(
                     self.model_id, 
@@ -258,71 +258,131 @@ class IndexTTS2ModelScope:
     
     def _setup_indextts_and_load(self, config_path: Path):
         """设置 index-tts 路径并加载模型"""
-        # 添加 index-tts 到 Python 路径
-        project_root = Path(__file__).parent.parent.parent
-        indextts_path = project_root / "index-tts"
-        if indextts_path.exists():
-            if str(indextts_path) not in sys.path:
-                sys.path.insert(0, str(indextts_path))
-            logger.info(f"添加 index-tts 路径: {indextts_path}")
+        # 设置离线模式环境变量，避免从 HuggingFace 下载模型
+        # IndexTTS2 会尝试下载 facebook/w2v-bert-2.0 等模型，如果网络不可达，需要离线模式
+        import os
+        
+        # 检查 HuggingFace 缓存目录
+        hf_cache_dir = os.environ.get('HF_HOME', os.path.expanduser('~/.cache/huggingface'))
+        logger.info(f"HuggingFace 缓存目录: {hf_cache_dir}")
+        
+        # 检查 w2v-bert-2.0 是否已缓存
+        w2v_bert_path = Path(hf_cache_dir) / "hub" / "models--facebook--w2v-bert-2.0"
+        if w2v_bert_path.exists():
+            logger.info(f"✓ 检测到 facebook/w2v-bert-2.0 本地缓存: {w2v_bert_path}")
         else:
-            logger.warning(f"index-tts 目录不存在: {indextts_path}")
-            logger.warning("尝试使用已安装的 indextts 包")
+            logger.warning(f"⚠ facebook/w2v-bert-2.0 未在本地缓存中找到")
+            logger.warning(f"  如果网络不可达，模型初始化可能会失败")
+            logger.warning(f"  建议在有网络时预先下载: huggingface-cli download facebook/w2v-bert-2.0")
         
-        # 使用 IndexTTS2 官方代码加载模型
-        logger.info("使用 IndexTTS2 官方代码加载模型（本地模式）...")
-        from indextts.infer_v2 import IndexTTS2
+        original_hf_offline = os.environ.get('HF_HUB_OFFLINE', None)
+        original_hf_local = os.environ.get('TRANSFORMERS_OFFLINE', None)
+        original_hf_home = os.environ.get('HF_HOME', None)
         
-        # 确保使用绝对路径，并移除尾随斜杠
-        config_path_abs = Path(config_path).resolve()
-        model_dir_abs = Path(self.model_dir).resolve()
-        
-        # 移除路径末尾的斜杠，避免 transformers 误判
-        model_dir_str = str(model_dir_abs).rstrip('/\\')  # 同时移除 Unix 和 Windows 路径分隔符
-        config_path_str = str(config_path_abs)
-        
-        logger.info(f"使用配置文件: {config_path_str}")
-        logger.info(f"使用模型目录: {model_dir_str}")
-        
-        # 验证模型目录存在必要的文件
-        model_dir_path = Path(model_dir_str)
-        if not model_dir_path.exists():
-            raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
-        
-        # 检查 Qwen 模型路径（如果配置中有的话）
-        # 根据 IndexTTS2 的结构，qwen_emo_path 是相对路径，指向 model_dir 下的子目录
-        qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
-        if qwen_emo_expected.exists():
-            qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
-            logger.info(f"✓ 检测到 Qwen 模型路径: {qwen_emo_path_str}")
-            # 验证关键文件是否存在
-            tokenizer_config = qwen_emo_expected / "tokenizer_config.json"
-            if tokenizer_config.exists():
-                logger.info(f"  - tokenizer_config.json 存在")
+        try:
+            # 启用离线模式，优先使用本地缓存
+            os.environ['HF_HUB_OFFLINE'] = '1'
+            os.environ['TRANSFORMERS_OFFLINE'] = '1'
+            # 确保使用正确的缓存目录
+            if original_hf_home:
+                os.environ['HF_HOME'] = original_hf_home
+            logger.info("已设置离线模式环境变量，将优先使用本地缓存")
+            logger.info("如果缓存中缺少模型文件，请在有网络时预先下载")
+            
+            # 添加 index-tts 到 Python 路径
+            project_root = Path(__file__).parent.parent.parent
+            indextts_path = project_root / "index-tts"
+            if indextts_path.exists():
+                if str(indextts_path) not in sys.path:
+                    sys.path.insert(0, str(indextts_path))
+                logger.info(f"添加 index-tts 路径: {indextts_path}")
             else:
-                logger.warning(f"  - tokenizer_config.json 不存在，可能会影响加载")
-        else:
-            logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
-            # 列出实际存在的子目录，帮助调试
-            logger.info(f"模型目录下的子目录:")
+                logger.warning(f"index-tts 目录不存在: {indextts_path}")
+                logger.warning("尝试使用已安装的 indextts 包")
+            
+            # 使用 IndexTTS2 官方代码加载模型
+            logger.info("使用 IndexTTS2 官方代码加载模型（本地模式）...")
+            from indextts.infer_v2 import IndexTTS2
+            
+            # 确保使用绝对路径，并移除尾随斜杠
+            config_path_abs = Path(config_path).resolve()
+            model_dir_abs = Path(self.model_dir).resolve()
+            
+            # 移除路径末尾的斜杠，避免 transformers 误判
+            model_dir_str = str(model_dir_abs).rstrip('/\\')  # 同时移除 Unix 和 Windows 路径分隔符
+            config_path_str = str(config_path_abs)
+            
+            logger.info(f"使用配置文件: {config_path_str}")
+            logger.info(f"使用模型目录: {model_dir_str}")
+            
+            # 验证模型目录存在必要的文件
+            model_dir_path = Path(model_dir_str)
+            if not model_dir_path.exists():
+                raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
+            
+            # 检查 Qwen 模型路径（如果配置中有的话）
+            # 根据 IndexTTS2 的结构，qwen_emo_path 是相对路径，指向 model_dir 下的子目录
+            qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
+            if qwen_emo_expected.exists():
+                qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
+                logger.info(f"✓ 检测到 Qwen 模型路径: {qwen_emo_path_str}")
+                # 验证关键文件是否存在
+                tokenizer_config = qwen_emo_expected / "tokenizer_config.json"
+                if tokenizer_config.exists():
+                    logger.info(f"  - tokenizer_config.json 存在")
+                else:
+                    logger.warning(f"  - tokenizer_config.json 不存在，可能会影响加载")
+            else:
+                logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
+                # 列出实际存在的子目录，帮助调试
+                logger.info(f"模型目录下的子目录:")
+                try:
+                    for item in model_dir_path.iterdir():
+                        if item.is_dir():
+                            logger.info(f"  - {item.name}/")
+                except Exception as e:
+                    logger.warning(f"无法列出目录内容: {e}")
+            
+            # 初始化 IndexTTS2（本地模式）
+            logger.info("正在初始化 IndexTTS2（使用本地模型路径）...")
             try:
-                for item in model_dir_path.iterdir():
-                    if item.is_dir():
-                        logger.info(f"  - {item.name}/")
-            except Exception as e:
-                logger.warning(f"无法列出目录内容: {e}")
-        
-        # 初始化 IndexTTS2（本地模式）
-        logger.info("正在初始化 IndexTTS2（使用本地模型路径）...")
-        self.tts_model = IndexTTS2(
-            cfg_path=config_path_str,
-            model_dir=model_dir_str,  # 使用清理过的路径，确保没有尾随斜杠
-            use_fp16=self.config.get('use_fp16', False),
-            device=self.device,
-            use_cuda_kernel=self.config.get('use_cuda_kernel', None),
-        )
-        
-        logger.info("✓ IndexTTS2 模型加载成功")
+                self.tts_model = IndexTTS2(
+                    cfg_path=config_path_str,
+                    model_dir=model_dir_str,  # 使用清理过的路径，确保没有尾随斜杠
+                    use_fp16=self.config.get('use_fp16', False),
+                    device=self.device,
+                    use_cuda_kernel=self.config.get('use_cuda_kernel', None),
+                )
+                
+                logger.info("✓ IndexTTS2 模型加载成功")
+            except (OSError, ConnectionError, Exception) as e:
+                error_msg = str(e)
+                if "huggingface.co" in error_msg or "Network is unreachable" in error_msg:
+                    logger.error("=" * 60)
+                    logger.error("网络连接失败：无法从 HuggingFace 下载模型")
+                    logger.error("=" * 60)
+                    logger.error("解决方案：")
+                    logger.error("1. 在有网络的环境中预先下载所需模型：")
+                    logger.error("   huggingface-cli download facebook/w2v-bert-2.0")
+                    logger.error("   huggingface-cli download amphion/MaskGCT")
+                    logger.error("   huggingface-cli download funasr/campplus")
+                    logger.error("")
+                    logger.error("2. 或者使用代理/镜像访问 HuggingFace")
+                    logger.error("")
+                    logger.error("3. 或者临时启用网络连接以下载缺失的模型")
+                    logger.error("=" * 60)
+                raise
+        finally:
+            # 恢复原始环境变量
+            if original_hf_offline is None:
+                os.environ.pop('HF_HUB_OFFLINE', None)
+            else:
+                os.environ['HF_HUB_OFFLINE'] = original_hf_offline
+            
+            if original_hf_local is None:
+                os.environ.pop('TRANSFORMERS_OFFLINE', None)
+            else:
+                os.environ['TRANSFORMERS_OFFLINE'] = original_hf_local
     
     def synthesize(
         self,
@@ -402,16 +462,16 @@ class IndexTTS2ModelScope:
                     if sr != self.sample_rate:
                         import librosa
                         audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sample_rate)
-                    
-                    # 转换为 float32
-                    if audio.dtype != np.float32:
-                        audio = audio.astype(np.float32)
-                    
-                    logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
-                    return audio
+                
+                # 转换为 float32
+                if audio.dtype != np.float32:
+                    audio = audio.astype(np.float32)
+                
+                logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
+                return audio
                 else:
                     raise FileNotFoundError(f"生成的音频文件不存在: {output_path}")
-                    
+                
             finally:
                 # 清理临时文件
                 if temp_file is not None and os.path.exists(temp_file.name):
