@@ -9,15 +9,15 @@ from typing import Optional, Union, Dict, Any, List
 import numpy as np
 import torch
 
+# 先初始化logger，再在try-except中使用
+logger = logging.getLogger(__name__)
+
 try:
     from funasr import AutoModel
     HAS_FUNASR = True
 except ImportError:
     HAS_FUNASR = False
     logger.warning("FunASR未安装，ASR功能将不可用")
-
-
-logger = logging.getLogger(__name__)
 
 
 class FunASRModule:

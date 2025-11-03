@@ -19,7 +19,7 @@ soundfile>=0.12.0
 huggingface-hub>=0.19.0  # 用于下载IndexTTS2官方模型
 
 # 音频处理
-pyaudio>=0.2.13
+# pyaudio>=0.2.13  # 可选：仅在需要实时录音时使用，需要系统安装 portaudio 库
 webrtcvad>=2.0.10  # VAD语音活动检测
 
 # 工具库

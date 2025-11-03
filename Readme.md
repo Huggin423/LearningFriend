@@ -34,6 +34,8 @@
 - CUDA（推荐，用于GPU加速）或 CPU
 - 硅基流动 API Key（获取地址：https://siliconflow.cn/）
 
+> 💡 **在 AutoDL 上部署？** 请查看 [AutoDL 部署指南](docs/DEPLOY_AUTODL.md)
+
 ### 安装步骤
 
 1. **克隆项目**
