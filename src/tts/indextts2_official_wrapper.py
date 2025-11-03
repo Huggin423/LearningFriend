@@ -107,10 +107,34 @@ class IndexTTS2Official:
             'qwen0.6bemo4-merge/model-00002-of-00002.safetensors',
         ]
         
+        # 检查可能的路径（ModelScope 可能下载到子目录）
+        possible_paths = [
+            self.model_dir,
+            self.model_dir / "IndexTeam" / "IndexTTS-2",
+        ]
+        
+        # 找到实际的文件目录
+        actual_dir = None
+        for path in possible_paths:
+            if (path / 'config.yaml').exists():
+                actual_dir = path
+                break
+        
+        if actual_dir is None:
+            # 如果没有找到，使用默认路径
+            actual_dir = self.model_dir
+        
+        # 检查文件是否存在
         for file in required_files:
-            if not (self.model_dir / file).exists():
-                logger.warning(f"缺少文件: {file}")
+            file_path = actual_dir / file
+            if not file_path.exists():
+                logger.warning(f"缺少文件: {file} (在 {actual_dir.relative_to(self.model_dir) if actual_dir != self.model_dir else 'checkpoints'} 目录)")
                 return False
+        
+        # 如果文件在子目录中，更新 model_dir
+        if actual_dir != self.model_dir:
+            logger.info(f"检测到模型文件在子目录: {actual_dir.relative_to(self.model_dir)}")
+            self.model_dir = actual_dir
         
         return True
     

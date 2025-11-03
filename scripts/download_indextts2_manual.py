@@ -51,18 +51,57 @@ def download_with_modelscope():
     """使用 ModelScope（国内镜像）下载"""
     try:
         from modelscope.hub.snapshot_download import snapshot_download
+        import shutil
         
         model_id = "IndexTeam/IndexTTS-2"
         cache_dir = project_root / "checkpoints"
+        target_dir = cache_dir
         
         print(f"开始从 ModelScope 下载模型: {model_id}...")
-        print(f"保存路径: {cache_dir.absolute()}")
+        print(f"保存路径: {target_dir.absolute()}")
         print("使用国内镜像，下载速度可能更快...\n")
         
-        snapshot_download(model_id, cache_dir=str(cache_dir))
+        # ModelScope 会在 cache_dir 下创建 model_id 子目录
+        downloaded_dir = snapshot_download(model_id, cache_dir=str(cache_dir))
+        
+        # 如果下载到了子目录，需要移动到目标目录
+        downloaded_path = Path(downloaded_dir)
+        if downloaded_path.name == "IndexTTS-2" and downloaded_path.parent.name == "IndexTeam":
+            print(f"\n检测到文件下载到: {downloaded_path.absolute()}")
+            print("正在移动文件到目标目录...")
+            
+            # 确保目标目录存在
+            target_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 移动所有文件
+            moved_count = 0
+            for item in downloaded_path.iterdir():
+                target_item = target_dir / item.name
+                if target_item.exists():
+                    if target_item.is_dir():
+                        shutil.rmtree(target_item)
+                    else:
+                        target_item.unlink()
+                
+                if item.is_dir():
+                    shutil.move(str(item), str(target_item))
+                else:
+                    shutil.move(str(item), str(target_item))
+                moved_count += 1
+            
+            # 尝试删除空的子目录
+            try:
+                if downloaded_path.parent.exists() and not any(downloaded_path.parent.iterdir()):
+                    downloaded_path.parent.rmdir()
+                if downloaded_path.exists():
+                    downloaded_path.rmdir()
+            except:
+                pass
+            
+            print(f"✓ 已移动 {moved_count} 个文件/目录到目标位置")
         
         print("\n✓ 模型下载完成！")
-        print(f"模型已保存到: {cache_dir.absolute()}")
+        print(f"模型已保存到: {target_dir.absolute()}")
         return True
         
     except ImportError:
@@ -71,12 +110,20 @@ def download_with_modelscope():
         return False
     except Exception as e:
         print(f"✗ 下载失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
 def verify_download():
     """验证下载的文件"""
     checkpoints_dir = project_root / "checkpoints"
+    
+    # 检查可能的路径（ModelScope 可能下载到子目录）
+    possible_paths = [
+        checkpoints_dir,
+        checkpoints_dir / "IndexTeam" / "IndexTTS-2",
+    ]
     
     required_files = [
         'config.yaml',
@@ -89,9 +136,26 @@ def verify_download():
     
     print("\n正在验证下载的文件...")
     missing_files = []
+    actual_dir = None
     
+    # 先找到实际的文件目录
+    for possible_path in possible_paths:
+        if (possible_path / 'config.yaml').exists():
+            actual_dir = possible_path
+            print(f"找到模型文件在: {actual_dir.relative_to(project_root)}")
+            break
+    
+    if actual_dir is None:
+        print("✗ 未找到模型文件")
+        print("\n可能的位置:")
+        for path in possible_paths:
+            if path.exists():
+                print(f"  - {path}")
+        return False
+    
+    # 验证必需文件
     for file in required_files:
-        file_path = checkpoints_dir / file
+        file_path = actual_dir / file
         if file_path.exists():
             size = file_path.stat().st_size / (1024 * 1024)  # MB
             print(f"  ✓ {file} ({size:.1f} MB)")
@@ -100,10 +164,15 @@ def verify_download():
             missing_files.append(file)
     
     if missing_files:
-        print(f"\n⚠ 缺少 {len(missing_files)} 个文件，请重新下载")
+        print(f"\n⚠ 缺少 {len(missing_files)} 个文件")
+        print(f"实际路径: {actual_dir.absolute()}")
+        print("提示: 如果文件在子目录中，可能需要手动移动或重新下载")
         return False
     else:
         print("\n✓ 所有文件验证通过！")
+        if actual_dir != checkpoints_dir:
+            print(f"\n注意: 文件在 {actual_dir.relative_to(project_root)} 目录下")
+            print("如果需要，可以将文件移动到 checkpoints/ 目录")
         return True
 
 
