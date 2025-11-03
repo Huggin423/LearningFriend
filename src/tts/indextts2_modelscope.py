@@ -29,8 +29,14 @@ class IndexTTS2ModelScope:
         self.sample_rate = config.get('sample_rate', 22050)
         self.speed = config.get('speed', 1.0)
         
-        # 模型路径
-        self.model_dir = Path(config.get('model_path', 'models/indextts2'))
+        # 模型路径（转换为绝对路径）
+        model_path = config.get('model_path', 'models/indextts2')
+        # 如果是相对路径，转换为相对于项目根目录的绝对路径
+        if not os.path.isabs(model_path):
+            project_root = Path(__file__).parent.parent.parent
+            self.model_dir = (project_root / model_path).resolve()
+        else:
+            self.model_dir = Path(model_path).resolve()
         
         # 初始化模型
         self._load_model()
@@ -95,7 +101,7 @@ class IndexTTS2ModelScope:
                         sub_config = subdir / "config.yaml"
                         if sub_config.exists():
                             config_path = sub_config
-                            self.model_dir = subdir  # 更新模型目录
+                            self.model_dir = subdir.resolve()  # 更新模型目录（使用绝对路径）
                             logger.info(f"在子目录中找到配置文件: {config_path}")
                             break
             
@@ -119,10 +125,17 @@ class IndexTTS2ModelScope:
             logger.info("使用 IndexTTS2 官方代码加载模型...")
             from indextts.infer_v2 import IndexTTS2
             
+            # 确保使用绝对路径
+            config_path_abs = Path(config_path).resolve()
+            model_dir_abs = Path(self.model_dir).resolve()
+            
+            logger.info(f"使用配置文件: {config_path_abs}")
+            logger.info(f"使用模型目录: {model_dir_abs}")
+            
             # 初始化 IndexTTS2
             self.tts_model = IndexTTS2(
-                cfg_path=str(config_path),
-                model_dir=str(self.model_dir),
+                cfg_path=str(config_path_abs),
+                model_dir=str(model_dir_abs),
                 use_fp16=self.config.get('use_fp16', False),
                 device=self.device,
                 use_cuda_kernel=self.config.get('use_cuda_kernel', None),
