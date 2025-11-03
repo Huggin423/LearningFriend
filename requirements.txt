@@ -13,11 +13,17 @@ addict>=2.4.0  # ModelScope依赖
 openai>=1.0.0  # DeepSeek和Qwen都兼容OpenAI接口
 requests>=2.31.0
 
-# TTS相关
+# TTS相关 - IndexTTS2依赖
 scipy>=1.10.0
 librosa>=0.10.0
 soundfile>=0.12.0
 huggingface-hub>=0.19.0  # 用于下载IndexTTS2官方模型
+transformers>=4.50.0  # IndexTTS2核心依赖
+omegaconf>=2.3.0  # IndexTTS2配置文件解析
+safetensors>=0.3.0  # IndexTTS2模型加载
+sentencepiece>=0.2.1  # IndexTTS2文本处理
+einops>=0.8.1  # IndexTTS2张量操作
+accelerate>=1.0.0  # IndexTTS2加速库
 
 # 音频处理
 # pyaudio>=0.2.13  # 可选：仅在需要实时录音时使用，需要系统安装 portaudio 库
