@@ -66,12 +66,50 @@ class IndexTTS2Official:
         
         try:
             logger.info("克隆 IndexTTS 官方仓库...")
-            subprocess.run([
-                'git', 'clone',
-                'https://github.com/index-tts/index-tts.git',
-                str(self.official_repo_path)
-            ], check=True)
-            logger.info("✓ 仓库克隆成功")
+            logger.info(f"目标路径: {self.official_repo_path.absolute()}")
+            
+            # 如果目录已存在但为空或不完整，删除后重新克隆
+            if self.official_repo_path.exists():
+                if not (self.official_repo_path / '.git').exists():
+                    logger.warning(f"目录存在但未检测到 .git，删除后重新克隆...")
+                    import shutil
+                    shutil.rmtree(self.official_repo_path)
+                else:
+                    logger.info("目录已存在且包含 .git，尝试拉取最新代码...")
+                    try:
+                        subprocess.run([
+                            'git', '-C', str(self.official_repo_path), 'pull'
+                        ], check=True, capture_output=True)
+                        logger.info("✓ 代码已更新")
+                    except:
+                        logger.warning("拉取失败，使用现有代码")
+            
+            if not self.official_repo_path.exists():
+                subprocess.run([
+                    'git', 'clone',
+                    'https://github.com/index-tts/index-tts.git',
+                    str(self.official_repo_path)
+                ], check=True)
+                logger.info("✓ 仓库克隆成功")
+            
+            # 验证关键文件是否存在
+            inference_file = self.official_repo_path / 'inference.py'
+            if not inference_file.exists():
+                logger.warning(f"未找到 inference.py，检查其他可能的位置...")
+                # 检查是否在子目录中
+                possible_locations = [
+                    self.official_repo_path / 'inference.py',
+                    self.official_repo_path / 'index_tts' / 'inference.py',
+                    self.official_repo_path / 'src' / 'inference.py',
+                ]
+                found = False
+                for loc in possible_locations:
+                    if loc.exists():
+                        logger.info(f"找到 inference.py 在: {loc.relative_to(self.official_repo_path)}")
+                        found = True
+                        break
+                if not found:
+                    logger.warning("无法找到 inference.py，可能需要手动检查仓库结构")
             
             # 安装依赖（如果 requirements.txt 存在）
             requirements_file = self.official_repo_path / 'requirements.txt'
@@ -91,6 +129,7 @@ class IndexTTS2Official:
             
         except subprocess.CalledProcessError as e:
             logger.error(f"克隆仓库失败: {str(e)}")
+            logger.error("请手动运行: git clone https://github.com/index-tts/index-tts.git index-tts")
             raise
         except Exception as e:
             logger.error(f"设置官方仓库时发生错误: {str(e)}")
@@ -98,13 +137,21 @@ class IndexTTS2Official:
     
     def _check_model_files(self) -> bool:
         """检查模型文件是否完整"""
+        # 必需的核心文件
         required_files = [
             'config.yaml',
             'bpe.model',
             'feat1.pt',
             'feat2.pt',
-            'qwen0.6bemo4-merge/model-00001-of-00002.safetensors',
-            'qwen0.6bemo4-merge/model-00002-of-00002.safetensors',
+        ]
+        
+        # Qwen 模型文件可能有不同的命名方式
+        # HuggingFace 版本: model-00001-of-00002.safetensors, model-00002-of-00002.safetensors
+        # ModelScope 版本: model.safetensors (单个文件)
+        qwen_model_variants = [
+            'qwen0.6bemo4-merge/model-00001-of-00002.safetensors',  # HuggingFace 分片版本
+            'qwen0.6bemo4-merge/model-00002-of-00002.safetensors',  # HuggingFace 分片版本
+            'qwen0.6bemo4-merge/model.safetensors',  # ModelScope 单文件版本
         ]
         
         # 检查可能的路径（ModelScope 可能下载到子目录）
@@ -124,17 +171,43 @@ class IndexTTS2Official:
             # 如果没有找到，使用默认路径
             actual_dir = self.model_dir
         
-        # 检查文件是否存在
+        # 检查核心文件
+        missing_files = []
         for file in required_files:
             file_path = actual_dir / file
             if not file_path.exists():
+                missing_files.append(file)
                 logger.warning(f"缺少文件: {file} (在 {actual_dir.relative_to(self.model_dir) if actual_dir != self.model_dir else 'checkpoints'} 目录)")
-                return False
+        
+        # 检查 Qwen 模型文件（支持多种命名）
+        qwen_dir = actual_dir / 'qwen0.6bemo4-merge'
+        qwen_model_found = False
+        
+        if qwen_dir.exists():
+            # 检查是否有分片文件（HuggingFace 版本）
+            if (qwen_dir / 'model-00001-of-00002.safetensors').exists() and \
+               (qwen_dir / 'model-00002-of-00002.safetensors').exists():
+                qwen_model_found = True
+                logger.debug("找到 HuggingFace 分片版本的 Qwen 模型")
+            # 检查是否有单文件（ModelScope 版本）
+            elif (qwen_dir / 'model.safetensors').exists():
+                qwen_model_found = True
+                logger.debug("找到 ModelScope 单文件版本的 Qwen 模型")
+        
+        if not qwen_model_found:
+            logger.warning(f"缺少 Qwen 模型文件 (在 {qwen_dir})")
+            logger.warning("期望找到以下文件之一：")
+            logger.warning("  - qwen0.6bemo4-merge/model-00001-of-00002.safetensors 和 model-00002-of-00002.safetensors")
+            logger.warning("  - qwen0.6bemo4-merge/model.safetensors")
+            missing_files.append('qwen0.6bemo4-merge/model*.safetensors')
         
         # 如果文件在子目录中，更新 model_dir
         if actual_dir != self.model_dir:
             logger.info(f"检测到模型文件在子目录: {actual_dir.relative_to(self.model_dir)}")
             self.model_dir = actual_dir
+        
+        if missing_files:
+            return False
         
         return True
     

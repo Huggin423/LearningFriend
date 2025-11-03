@@ -125,14 +125,17 @@ def verify_download():
         checkpoints_dir / "IndexTeam" / "IndexTTS-2",
     ]
     
+    # 必需的核心文件
     required_files = [
         'config.yaml',
         'bpe.model',
         'feat1.pt',
         'feat2.pt',
-        'qwen0.6bemo4-merge/model-00001-of-00002.safetensors',
-        'qwen0.6bemo4-merge/model-00002-of-00002.safetensors',
     ]
+    
+    # Qwen 模型文件可能有不同的命名
+    # HuggingFace: model-00001-of-00002.safetensors + model-00002-of-00002.safetensors
+    # ModelScope: model.safetensors (单个文件)
     
     print("\n正在验证下载的文件...")
     missing_files = []
@@ -162,6 +165,29 @@ def verify_download():
         else:
             print(f"  ✗ {file} (缺失)")
             missing_files.append(file)
+    
+    # 检查 Qwen 模型文件（支持多种命名）
+    qwen_dir = actual_dir / 'qwen0.6bemo4-merge'
+    qwen_model_found = False
+    
+    if qwen_dir.exists():
+        # 检查 HuggingFace 分片版本
+        if (qwen_dir / 'model-00001-of-00002.safetensors').exists() and \
+           (qwen_dir / 'model-00002-of-00002.safetensors').exists():
+            size1 = (qwen_dir / 'model-00001-of-00002.safetensors').stat().st_size / (1024 * 1024)
+            size2 = (qwen_dir / 'model-00002-of-00002.safetensors').stat().st_size / (1024 * 1024)
+            print(f"  ✓ qwen0.6bemo4-merge/model-00001-of-00002.safetensors ({size1:.1f} MB)")
+            print(f"  ✓ qwen0.6bemo4-merge/model-00002-of-00002.safetensors ({size2:.1f} MB)")
+            qwen_model_found = True
+        # 检查 ModelScope 单文件版本
+        elif (qwen_dir / 'model.safetensors').exists():
+            size = (qwen_dir / 'model.safetensors').stat().st_size / (1024 * 1024)
+            print(f"  ✓ qwen0.6bemo4-merge/model.safetensors ({size:.1f} MB) [ModelScope版本]")
+            qwen_model_found = True
+    
+    if not qwen_model_found:
+        print(f"  ✗ qwen0.6bemo4-merge/model*.safetensors (缺失)")
+        missing_files.append('qwen0.6bemo4-merge/model*.safetensors')
     
     if missing_files:
         print(f"\n⚠ 缺少 {len(missing_files)} 个文件")
