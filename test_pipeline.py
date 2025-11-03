@@ -101,7 +101,30 @@ def test_tts_module():
         # 测试合成
         print("\n尝试合成语音...")
         test_text = "你好，我是智能学伴助手"
-        audio = tts.synthesize(test_text)
+        
+        # IndexTTS2 需要参考音频，尝试使用示例音频
+        reference_audio_path = None
+        possible_ref_audios = [
+            "index-tts/examples/voice_01.wav",
+            "index-tts/examples/voice_02.wav",
+            "index-tts/examples/voice_03.wav",
+        ]
+        
+        for path in possible_ref_audios:
+            if os.path.exists(path):
+                reference_audio_path = path
+                print(f"  使用参考音频: {reference_audio_path}")
+                break
+        
+        if reference_audio_path is None:
+            print("⚠ 警告: 未找到参考音频文件，IndexTTS2 需要参考音频")
+            print("  请提供 reference_audio_path 参数")
+            return None
+        
+        audio = tts.synthesize(
+            test_text,
+            reference_audio_path=reference_audio_path
+        )
         print(f"✓ TTS合成完成")
         print(f"  音频长度: {len(audio)} 样本")
         print(f"  音频时长: {len(audio)/tts.sample_rate:.2f} 秒")

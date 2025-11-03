@@ -40,54 +40,106 @@ class IndexTTS2ModelScope:
         logger.info(f"模型目录: {self.model_dir}")
     
     def _load_model(self):
-        """从 ModelScope 加载模型"""
+        """从 ModelScope 下载模型，然后使用 IndexTTS2 官方代码加载"""
         try:
             from modelscope.hub.snapshot_download import snapshot_download
-            from modelscope.pipelines import pipeline
             
-            logger.info("正在从 ModelScope 加载 IndexTTS2 模型...")
+            logger.info("正在从 ModelScope 下载 IndexTTS2 模型...")
             
             # 下载或加载模型
             model_id = "IndexTeam/IndexTTS-2"
             
             # 检查模型是否已下载
-            model_path_or_id = model_id  # 默认使用 model_id，让 ModelScope 处理缓存
-            if self.model_dir.exists() and any(self.model_dir.iterdir()):
-                # 如果本地目录存在且有文件，优先使用本地路径
-                logger.info(f"使用本地模型目录: {self.model_dir}")
-                model_path_or_id = str(self.model_dir)
-            else:
-                logger.info("模型未找到，将从 ModelScope 自动下载...")
-                # 下载到指定目录
+            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
+                logger.info("模型未找到，正在从 ModelScope 下载...")
                 try:
                     snapshot_download(
                         model_id, 
                         cache_dir=str(self.model_dir),
                         local_files_only=False
                     )
-                    # 下载后使用本地路径
-                    if self.model_dir.exists() and any(self.model_dir.iterdir()):
-                        model_path_or_id = str(self.model_dir)
+                    logger.info("✓ 模型下载完成")
                 except Exception as e:
-                    logger.warning(f"下载到指定目录失败，将使用 ModelScope 默认缓存: {e}")
-                    # 如果下载失败，仍然使用 model_id，ModelScope 会使用默认缓存
-                    model_path_or_id = model_id
+                    logger.warning(f"下载到指定目录失败: {e}")
+                    # 检查是否在默认缓存位置
+                    import os
+                    default_cache = os.path.expanduser("~/.cache/modelscope/hub/" + model_id.replace("/", "--"))
+                    if os.path.exists(default_cache):
+                        logger.info(f"使用 ModelScope 默认缓存位置: {default_cache}")
+                        self.model_dir = Path(default_cache)
             
-            # 创建 TTS pipeline
-            # 使用字符串 "text-to-speech" 作为任务名，因为 Tasks.text_to_speech 可能不可用
-            self.pipeline = pipeline(
-                task="text-to-speech",  # 使用字符串而不是 Tasks 常量
-                model=model_path_or_id,
-                device=self.device
+            # 确保模型目录存在且有文件
+            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
+                raise FileNotFoundError(
+                    f"模型目录为空或不存在: {self.model_dir}\n"
+                    f"请手动下载模型或检查 ModelScope 配置"
+                )
+            
+            # 查找配置文件
+            config_path = None
+            possible_config_paths = [
+                self.model_dir / "config.yaml",
+                self.model_dir / "IndexTeam" / "IndexTTS-2" / "config.yaml",
+            ]
+            
+            for path in possible_config_paths:
+                if path.exists():
+                    config_path = path
+                    logger.info(f"找到配置文件: {config_path}")
+                    break
+            
+            if config_path is None:
+                # 如果找不到配置文件，尝试在模型目录的子目录中查找
+                for subdir in self.model_dir.iterdir():
+                    if subdir.is_dir():
+                        sub_config = subdir / "config.yaml"
+                        if sub_config.exists():
+                            config_path = sub_config
+                            self.model_dir = subdir  # 更新模型目录
+                            logger.info(f"在子目录中找到配置文件: {config_path}")
+                            break
+            
+            if config_path is None:
+                raise FileNotFoundError(
+                    f"找不到配置文件 config.yaml\n"
+                    f"请检查模型目录: {self.model_dir}"
+                )
+            
+            # 添加 index-tts 到 Python 路径
+            project_root = Path(__file__).parent.parent.parent
+            indextts_path = project_root / "index-tts"
+            if indextts_path.exists():
+                if str(indextts_path) not in sys.path:
+                    sys.path.insert(0, str(indextts_path))
+            else:
+                logger.warning(f"index-tts 目录不存在: {indextts_path}")
+                logger.warning("尝试使用已安装的 indextts 包")
+            
+            # 使用 IndexTTS2 官方代码加载模型
+            logger.info("使用 IndexTTS2 官方代码加载模型...")
+            from indextts.infer_v2 import IndexTTS2
+            
+            # 初始化 IndexTTS2
+            self.tts_model = IndexTTS2(
+                cfg_path=str(config_path),
+                model_dir=str(self.model_dir),
+                use_fp16=self.config.get('use_fp16', False),
+                device=self.device,
+                use_cuda_kernel=self.config.get('use_cuda_kernel', None),
             )
             
             logger.info("✓ 模型加载成功")
             
-        except ImportError:
-            logger.error("ModelScope 未安装，请运行: pip install modelscope")
+        except ImportError as e:
+            logger.error(f"导入失败: {str(e)}")
+            logger.error("请确保已安装所需依赖:")
+            logger.error("  pip install modelscope")
+            logger.error("  pip install indextts (如果可用)")
             raise
         except Exception as e:
             logger.error(f"加载模型失败: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
             raise
     
     def synthesize(
@@ -109,84 +161,92 @@ class IndexTTS2ModelScope:
             reference_audio_path: 参考音频文件路径 (可选)
             emotion: 情感标签 (可选): 'neutral', 'happiness', 'sadness', 'anger', etc.
             emotion_strength: 情感强度 (0-1)
-            speed: 语速倍率
+            speed: 语速倍率（注意：IndexTTS2 可能不支持动态语速调整）
             **kwargs: 其他参数
         
         Returns:
             audio: 音频数组
         """
         try:
-            if speed is None:
-                speed = self.speed
+            import tempfile
+            import soundfile as sf
+            import torch
             
-            # 准备输入数据
-            input_data = {
-                'text': text
-            }
-            
-            # 添加参考音频（如果提供）
+            # 准备参考音频路径
+            temp_file = None
             if reference_audio_path is None and reference_audio is not None:
                 # 保存临时文件
-                import tempfile
-                import soundfile as sf
-                
                 temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
                 sf.write(temp_file.name, reference_audio, self.sample_rate)
                 reference_audio_path = temp_file.name
             
-            if reference_audio_path:
-                input_data['reference_audio'] = reference_audio_path
-            
-            # 添加情感参数
-            if emotion:
-                input_data['emotion'] = emotion
-                input_data['emotion_strength'] = emotion_strength
-            
-            # 添加语速
-            if speed and speed != 1.0:
-                input_data['speed'] = speed
-            
-            # 调用 ModelScope pipeline
-            try:
-                output = self.pipeline(input_data)
-                
-                # 提取音频数据
-                if isinstance(output, dict):
-                    audio = output.get('output_wav', output.get('audio'))
+            # 如果没有提供参考音频，尝试使用默认参考音频
+            if reference_audio_path is None:
+                # 检查是否有默认参考音频（可以从配置中读取）
+                default_ref_audio = self.config.get('default_reference_audio')
+                if default_ref_audio and os.path.exists(default_ref_audio):
+                    reference_audio_path = default_ref_audio
+                    logger.info(f"使用默认参考音频: {reference_audio_path}")
                 else:
-                    audio = output
+                    # 如果完全没有参考音频，IndexTTS2 可能无法工作
+                    # 生成一个简单的提示音作为参考（不推荐，但可以作为后备方案）
+                    logger.warning("未提供参考音频，IndexTTS2 需要参考音频才能工作")
+                    logger.warning("请提供 reference_audio 或 reference_audio_path")
+                    raise ValueError("IndexTTS2 需要参考音频才能进行语音合成")
+            
+            # 创建临时输出文件
+            output_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            output_path = output_temp.name
+            output_temp.close()
+            
+            try:
+                # 调用 IndexTTS2 的 infer 方法
+                # infer 方法需要: spk_audio_prompt, text, output_path
+                result = self.tts_model.infer(
+                    spk_audio_prompt=reference_audio_path,
+                    text=text,
+                    output_path=output_path,
+                    emo_audio_prompt=None,  # 可以后续支持
+                    emo_alpha=emotion_strength if emotion else 1.0,
+                    emo_vector=None,  # 可以后续支持
+                    verbose=False,
+                    **kwargs
+                )
                 
+                # 读取生成的音频文件
+                if os.path.exists(output_path):
+                    audio, sr = sf.read(output_path)
+                    # 确保采样率匹配
+                    if sr != self.sample_rate:
+                        import librosa
+                        audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sample_rate)
+                    
+                    # 转换为 float32
+                    if audio.dtype != np.float32:
+                        audio = audio.astype(np.float32)
+                    
+                    logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
+                    return audio
+                else:
+                    raise FileNotFoundError(f"生成的音频文件不存在: {output_path}")
+                    
+            finally:
                 # 清理临时文件
-                if 'temp_file' in locals():
-                    os.unlink(temp_file.name)
-                
-                # 转换音频格式
-                if isinstance(audio, str):
-                    import soundfile as sf
-                    audio, _ = sf.read(audio)
-                elif not isinstance(audio, np.ndarray):
-                    # 尝试转换为 numpy 数组
-                    audio = np.array(audio)
-                
-                # 转换为 float32
-                if audio.dtype != np.float32:
-                    audio = audio.astype(np.float32)
-                
-                logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
-                return audio
-                
-            except Exception as e:
-                logger.error(f"模型推理失败: {str(e)}")
-                # 清理临时文件
-                if 'temp_file' in locals():
+                if temp_file is not None and os.path.exists(temp_file.name):
                     try:
                         os.unlink(temp_file.name)
                     except:
                         pass
-                raise
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except:
+                        pass
             
         except Exception as e:
             logger.error(f"语音合成失败: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
             raise
     
     def synthesize_to_file(
