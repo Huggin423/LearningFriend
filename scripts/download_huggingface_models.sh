@@ -42,11 +42,34 @@ if [ "$choice" == "2" ]; then
         python3 -c "
 from modelscope.hub.snapshot_download import snapshot_download
 import os
+from pathlib import Path
+import shutil
 model='$model'
 print(f'下载 {model} 到缓存目录...')
 try:
     path = snapshot_download(model)
     print(f'✓ 下载成功: {path}')
+    
+    # 同步到HuggingFace缓存目录
+    ms_cache_dir = os.path.expanduser('~/.cache/modelscope')
+    hf_cache_dir = os.path.expanduser('~/.cache/huggingface')
+    
+    # 模型路径映射
+    ms_path = Path(ms_cache_dir) / 'hub' / model
+    hf_path_name = model.replace('/', '--')
+    hf_path = Path(hf_cache_dir) / 'hub' / f'models--{hf_path_name}'
+    
+    if ms_path.exists() and not hf_path.exists():
+        print(f'正在同步到 HuggingFace 缓存目录...')
+        hf_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            # 尝试创建符号链接
+            hf_path.symlink_to(ms_path)
+            print(f'✓ 已创建符号链接: {hf_path}')
+        except (OSError, PermissionError):
+            # 如果符号链接失败，复制文件
+            shutil.copytree(ms_path, hf_path, dirs_exist_ok=True)
+            print(f'✓ 已复制到 HuggingFace 缓存: {hf_path}')
 except Exception as e:
     print(f'✗ 下载失败: {e}')
 "
@@ -106,5 +129,10 @@ echo "下载完成！"
 echo "======================================"
 echo ""
 echo "模型已保存到缓存目录"
-echo "现在可以在离线环境中使用 IndexTTS2 了"
+if [ "$choice" == "2" ]; then
+    echo "注意：ModelScope下载的模型已自动同步到HuggingFace缓存目录"
+    echo "现在程序可以在离线环境中正确识别这些模型了"
+else
+    echo "现在可以在离线环境中使用 IndexTTS2 了"
+fi
 

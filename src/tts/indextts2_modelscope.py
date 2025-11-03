@@ -6,12 +6,29 @@ IndexTTS2 ModelScope 官方模型包装器
 import os
 import sys
 import logging
+import warnings
+
+# 在导入其他模块之前，禁用 HuggingFace 重试
+# 导入补丁模块（会自动设置环境变量和修补函数）
+try:
+    from . import _hf_patch
+except ImportError:
+    # 如果补丁不存在，直接设置环境变量
+    os.environ['HF_HUB_OFFLINE'] = '1'
+    os.environ['TRANSFORMERS_OFFLINE'] = '1'
+    os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
+    os.environ['HF_HUB_DISABLE_EXPERIMENTAL_WARNING'] = '1'
+
 import numpy as np
 import torch
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+# 禁用所有警告（减少日志噪音）
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 class IndexTTS2ModelScope:
@@ -27,6 +44,24 @@ class IndexTTS2ModelScope:
                 - model: 模型 ID（如 "IndexTeam/IndexTTS-2"），如果使用 hub 模型
                 - use_local: 是否强制使用本地模式（默认根据 model_path 自动判断）
         """
+        # 最重要：在导入任何模块之前，立即设置离线模式
+        # 这样可以避免 HuggingFace 库在初始化时尝试连接网络
+        os.environ['HF_HUB_OFFLINE'] = '1'
+        os.environ['TRANSFORMERS_OFFLINE'] = '1'
+        
+        # 禁用 HuggingFace 的重试和警告（减少日志噪音）
+        os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
+        os.environ['HF_HUB_DISABLE_EXPERIMENTAL_WARNING'] = '1'
+        
+        # 设置重试次数为 0（直接跳过重试）
+        # 通过设置很短的超时和禁用重试异常来快速失败
+        os.environ['HF_HUB_MAX_RETRIES'] = '0'
+        
+        # 确保使用正确的缓存目录
+        if 'HF_HOME' not in os.environ:
+            hf_home = os.path.expanduser('~/.cache/huggingface')
+            os.environ['HF_HOME'] = hf_home
+        
         self.config = config
         self.device = config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
         self.sample_rate = config.get('sample_rate', 22050)
@@ -266,14 +301,67 @@ class IndexTTS2ModelScope:
         hf_cache_dir = os.environ.get('HF_HOME', os.path.expanduser('~/.cache/huggingface'))
         logger.info(f"HuggingFace 缓存目录: {hf_cache_dir}")
         
-        # 检查 w2v-bert-2.0 是否已缓存
-        w2v_bert_path = Path(hf_cache_dir) / "hub" / "models--facebook--w2v-bert-2.0"
-        if w2v_bert_path.exists():
-            logger.info(f"✓ 检测到 facebook/w2v-bert-2.0 本地缓存: {w2v_bert_path}")
-        else:
-            logger.warning(f"⚠ facebook/w2v-bert-2.0 未在本地缓存中找到")
-            logger.warning(f"  如果网络不可达，模型初始化可能会失败")
-            logger.warning(f"  建议在有网络时预先下载: huggingface-cli download facebook/w2v-bert-2.0")
+        # 检查 ModelScope 缓存目录
+        ms_cache_dir = os.environ.get('MODELSCOPE_CACHE', os.path.expanduser('~/.cache/modelscope'))
+        
+        # 需要同步的模型映射：ModelScope路径 -> HuggingFace路径
+        models_to_sync = {
+            "facebook/w2v-bert-2.0": ("facebook/w2v-bert-2.0", "models--facebook--w2v-bert-2.0"),
+            "amphion/MaskGCT": ("amphion/MaskGCT", "models--amphion--MaskGCT"),
+            "funasr/campplus": ("funasr/campplus", "models--funasr--campplus"),
+        }
+        
+        # 检查并同步模型
+        for model_name, (ms_path, hf_path) in models_to_sync.items():
+            ms_model_path = Path(ms_cache_dir) / "hub" / ms_path
+            hf_model_path = Path(hf_cache_dir) / "hub" / hf_path
+            
+            if hf_model_path.exists():
+                logger.debug(f"✓ {model_name} 已在 HuggingFace 缓存中: {hf_model_path}")
+            elif ms_model_path.exists():
+                # ModelScope 有但 HuggingFace 没有，尝试同步
+                logger.info(f"发现 {model_name} 在 ModelScope 缓存中，正在同步到 HuggingFace 缓存...")
+                try:
+                    # 确保目标目录存在
+                    hf_model_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # 创建符合 HuggingFace 标准的缓存结构
+                    import hashlib
+                    snapshot_hash = hashlib.md5(str(ms_model_path.resolve()).encode()).hexdigest()[:8]
+                    snapshots_dir = hf_model_path / "snapshots"
+                    snapshots_dir.mkdir(parents=True, exist_ok=True)
+                    snapshot_path = snapshots_dir / snapshot_hash
+                    
+                    if not snapshot_path.exists():
+                        ms_model_path_abs = ms_model_path.resolve()
+                        try:
+                            snapshot_path.symlink_to(ms_model_path_abs)
+                            logger.info(f"✓ 已创建 snapshot 符号链接: {snapshot_path}")
+                        except (OSError, PermissionError):
+                            import shutil
+                            shutil.copytree(ms_model_path, snapshot_path, dirs_exist_ok=True)
+                            logger.info(f"✓ 已复制到 snapshot 目录: {snapshot_path}")
+                    
+                    # 创建 refs/main 文件
+                    refs_dir = hf_model_path / "refs"
+                    refs_dir.mkdir(exist_ok=True)
+                    main_ref = refs_dir / "main"
+                    main_ref.write_text(snapshot_hash)
+                    logger.info(f"✓ 已创建 HuggingFace 标准缓存结构")
+                except Exception as e:
+                    logger.error(f"✗ 同步 {model_name} 失败: {e}")
+                    logger.warning(f"  请运行同步脚本: python3 scripts/sync_modelscope_to_huggingface.py")
+            else:
+                if model_name == "facebook/w2v-bert-2.0":
+                    logger.warning(f"⚠ {model_name} 未在本地缓存中找到")
+                    logger.warning(f"  如果网络不可达，模型初始化可能会失败")
+                    logger.warning(f"  建议在有网络时预先下载: huggingface-cli download {model_name}")
+                elif model_name == "funasr/campplus":
+                    logger.warning(f"⚠ {model_name} 未在本地缓存中找到")
+                    logger.warning(f"  注意：此模型在 ModelScope 上不可用，只能从 HuggingFace 下载")
+                    logger.warning(f"  如果网络不可达，请在有网络时预先下载:")
+                    logger.warning(f"    export HF_ENDPOINT=https://hf-mirror.com  # 国内用户推荐")
+                    logger.warning(f"    huggingface-cli download funasr/campplus --include campplus_cn_common.bin")
         
         original_hf_offline = os.environ.get('HF_HUB_OFFLINE', None)
         original_hf_local = os.environ.get('TRANSFORMERS_OFFLINE', None)
@@ -289,6 +377,26 @@ class IndexTTS2ModelScope:
             logger.info("已设置离线模式环境变量，将优先使用本地缓存")
             logger.info("如果缓存中缺少模型文件，请在有网络时预先下载")
             
+            # 在导入 IndexTTS2 之前，确保离线模式已设置
+            # 并修复 ModelScope 路径问题（点号转换为下划线）
+            ms_cache_dir = os.environ.get('MODELSCOPE_CACHE', os.path.expanduser('~/.cache/modelscope'))
+            w2v_orig = Path(ms_cache_dir) / "hub" / "facebook" / "w2v-bert-2.0"
+            w2v_alt = Path(ms_cache_dir) / "hub" / "facebook" / "w2v-bert-2___0"
+            
+            # 确保 ModelScope 转换路径有必要的文件
+            if w2v_orig.exists() and w2v_alt.exists():
+                needed_files = ['model.safetensors', 'preprocessor_config.json']
+                for fname in needed_files:
+                    orig_file = w2v_orig / fname
+                    alt_file = w2v_alt / fname
+                    if orig_file.exists() and not alt_file.exists():
+                        try:
+                            import shutil
+                            shutil.copy2(orig_file, alt_file)
+                            logger.debug(f"已复制 {fname} 到 ModelScope 转换路径")
+                        except:
+                            pass
+            
             # 添加 index-tts 到 Python 路径
             project_root = Path(__file__).parent.parent.parent
             indextts_path = project_root / "index-tts"
@@ -302,6 +410,9 @@ class IndexTTS2ModelScope:
             
             # 使用 IndexTTS2 官方代码加载模型
             logger.info("使用 IndexTTS2 官方代码加载模型（本地模式）...")
+            # 导入前再次确认离线模式
+            os.environ['HF_HUB_OFFLINE'] = '1'
+            os.environ['TRANSFORMERS_OFFLINE'] = '1'
             from indextts.infer_v2 import IndexTTS2
             
             # 确保使用绝对路径，并移除尾随斜杠
@@ -426,15 +537,41 @@ class IndexTTS2ModelScope:
             if reference_audio_path is None:
                 # 检查是否有默认参考音频（可以从配置中读取）
                 default_ref_audio = self.config.get('default_reference_audio')
+                
+                # 如果是相对路径，转换为绝对路径
+                if default_ref_audio:
+                    if not os.path.isabs(default_ref_audio):
+                        project_root = Path(__file__).parent.parent.parent
+                        default_ref_audio = str(project_root / default_ref_audio)
+                
                 if default_ref_audio and os.path.exists(default_ref_audio):
                     reference_audio_path = default_ref_audio
                     logger.info(f"使用默认参考音频: {reference_audio_path}")
                 else:
-                    # 如果完全没有参考音频，IndexTTS2 可能无法工作
-                    # 生成一个简单的提示音作为参考（不推荐，但可以作为后备方案）
-                    logger.warning("未提供参考音频，IndexTTS2 需要参考音频才能工作")
-                    logger.warning("请提供 reference_audio 或 reference_audio_path")
-                    raise ValueError("IndexTTS2 需要参考音频才能进行语音合成")
+                    # 尝试自动查找参考音频
+                    project_root = Path(__file__).parent.parent.parent
+                    possible_paths = [
+                        project_root / "index-tts" / "examples" / "test_voice.wav",
+                        project_root / "data" / "audio_input" / "input_20251103_110735_0000.wav",
+                        project_root / "index-tts" / "examples" / "voice_01.wav",
+                    ]
+                    
+                    for path in possible_paths:
+                        if path.exists() and path.stat().st_size > 1024:
+                            try:
+                                with open(path, 'rb') as f:
+                                    header = f.read(12)
+                                    if header[:4] == b'RIFF' and header[8:12] == b'WAVE':
+                                        reference_audio_path = str(path)
+                                        logger.info(f"自动找到参考音频: {reference_audio_path}")
+                                        break
+                            except:
+                                continue
+                    
+                    if reference_audio_path is None:
+                        logger.warning("未提供参考音频，IndexTTS2 需要参考音频才能工作")
+                        logger.warning("请提供 reference_audio 或 reference_audio_path")
+                        raise ValueError("IndexTTS2 需要参考音频才能进行语音合成")
             
             # 创建临时输出文件
             output_temp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)

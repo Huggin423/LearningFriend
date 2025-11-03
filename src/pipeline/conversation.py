@@ -202,7 +202,22 @@ class ConversationPipeline:
             # Step 3: TTS
             logger.info("Step 3/3: TTS语音合成...")
             try:
-                tts_audio = self.tts.synthesize(llm_response)
+                # 获取默认参考音频路径（如果配置中有）
+                tts_config = self.config.get('tts', {})
+                default_ref_audio = tts_config.get('default_reference_audio')
+                
+                # 处理相对路径
+                if default_ref_audio and not os.path.isabs(default_ref_audio):
+                    from pathlib import Path
+                    project_root = Path(__file__).parent.parent.parent
+                    default_ref_audio = str(project_root / default_ref_audio)
+                
+                # 使用默认参考音频（如果可用）
+                ref_audio_path = default_ref_audio if (default_ref_audio and os.path.exists(default_ref_audio)) else None
+                tts_audio = self.tts.synthesize(
+                    llm_response,
+                    reference_audio_path=ref_audio_path
+                )
                 result['tts_audio'] = tts_audio
                 
                 if self.save_audio:

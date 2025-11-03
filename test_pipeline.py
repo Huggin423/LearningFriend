@@ -104,17 +104,41 @@ def test_tts_module():
         
         # IndexTTS2 需要参考音频，尝试使用示例音频
         reference_audio_path = None
+        
+        # 首先尝试使用真实音频文件（非 Git LFS 占位符）
         possible_ref_audios = [
-            "index-tts/examples/voice_01.wav",
+            "index-tts/examples/test_voice.wav",  # 我们创建的测试音频
+            "data/audio_input/input_20251103_110735_0000.wav",  # 已有的真实音频
+            "data/audio_input/input_20251103_112729_0000.wav",
+            "index-tts/examples/voice_01.wav",  # Git LFS 文件（可能需要下载）
             "index-tts/examples/voice_02.wav",
             "index-tts/examples/voice_03.wav",
         ]
         
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        
         for path in possible_ref_audios:
-            if os.path.exists(path):
-                reference_audio_path = path
-                print(f"  使用参考音频: {reference_audio_path}")
-                break
+            # 转换为绝对路径
+            if not os.path.isabs(path):
+                abs_path = os.path.join(project_root, path)
+            else:
+                abs_path = path
+            
+            if os.path.exists(abs_path):
+                # 检查是否是真实的音频文件（大于 1KB）
+                try:
+                    if os.path.getsize(abs_path) > 1024:
+                        # 尝试读取文件头，确认是音频文件
+                        with open(abs_path, 'rb') as f:
+                            header = f.read(12)
+                            # WAV 文件头应该是 "RIFF" + 4字节 + "WAVE"
+                            if header[:4] == b'RIFF' and header[8:12] == b'WAVE':
+                                reference_audio_path = abs_path
+                                print(f"  使用参考音频: {reference_audio_path}")
+                                break
+                except Exception as e:
+                    continue
         
         if reference_audio_path is None:
             print("⚠ 警告: 未找到参考音频文件，IndexTTS2 需要参考音频")

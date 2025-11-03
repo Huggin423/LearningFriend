@@ -64,6 +64,13 @@ tts:
   sample_rate: 22050  # 采样率
   emotion: "neutral"  # 默认情感
   
+  # 默认参考音频路径（IndexTTS2 必需）
+  # 会自动查找以下路径之一：
+  # - index-tts/examples/test_voice.wav
+  # - data/audio_input/*.wav
+  # - index-tts/examples/voice_*.wav
+  default_reference_audio: "index-tts/examples/test_voice.wav"
+  
 # 对话管道配置
 conversation:
   max_history: 10  # 最大对话历史轮数

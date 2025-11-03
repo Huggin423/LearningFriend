@@ -24,6 +24,9 @@ safetensors>=0.3.0  # IndexTTS2模型加载
 sentencepiece>=0.2.1  # IndexTTS2文本处理
 einops>=0.8.1  # IndexTTS2张量操作
 accelerate>=1.0.0  # IndexTTS2加速库
+descript-audiotools>=0.7.0  # IndexTTS2 DAC音频编码依赖
+WeTextProcessing>=1.0.0  # IndexTTS2 文本规范化（Linux）
+# wetext>=0.0.9  # IndexTTS2 文本规范化（Windows/Mac，可选）
 
 # 音频处理
 # pyaudio>=0.2.13  # 可选：仅在需要实时录音时使用，需要系统安装 portaudio 库
