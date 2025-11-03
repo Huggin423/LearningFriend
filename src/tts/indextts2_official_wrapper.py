@@ -47,18 +47,20 @@ class IndexTTS2Official:
     
     def _setup_official_model(self):
         """设置官方模型"""
+        # 检查模型文件（优先检查，因为代码仓库是可选的）
+        if not self._check_model_files():
+            logger.info("模型文件不完整，正在下载...")
+            self._download_models()
+        
+        # 检查并克隆官方代码仓库
         if not self.official_repo_path.exists():
             logger.info("官方代码仓库不存在，正在克隆...")
+            logger.info(f"这将克隆到: {self.official_repo_path.absolute()}")
             self._clone_official_repo()
         
         # 添加到Python路径
         if str(self.official_repo_path) not in sys.path:
             sys.path.insert(0, str(self.official_repo_path))
-        
-        # 检查模型文件
-        if not self._check_model_files():
-            logger.info("模型文件不完整，正在下载...")
-            self._download_models()
     
     def _clone_official_repo(self):
         """克隆官方仓库"""
@@ -241,37 +243,88 @@ class IndexTTS2Official:
     def _load_official_inference(self):
         """加载官方推理接口"""
         try:
+            # 首先检查仓库是否存在
+            if not self.official_repo_path.exists():
+                raise ImportError(
+                    f"官方代码仓库不存在: {self.official_repo_path}\n"
+                    f"请运行: git clone https://github.com/index-tts/index-tts.git {self.official_repo_path}"
+                )
+            
+            # 添加到 Python 路径
+            if str(self.official_repo_path) not in sys.path:
+                sys.path.insert(0, str(self.official_repo_path))
+            
+            # 查找可能的推理文件位置
+            possible_inference_files = [
+                self.official_repo_path / "inference.py",
+                self.official_repo_path / "index_tts" / "inference.py",
+                self.official_repo_path / "src" / "inference.py",
+                self.official_repo_path / "infer.py",
+                self.official_repo_path / "index_tts" / "infer.py",
+            ]
+            
+            inference_file = None
+            for file_path in possible_inference_files:
+                if file_path.exists():
+                    inference_file = file_path
+                    logger.debug(f"找到推理文件: {inference_file}")
+                    break
+            
+            if inference_file is None:
+                # 列出实际存在的文件，帮助诊断
+                logger.error(f"无法找到 inference.py 文件")
+                logger.error(f"仓库路径: {self.official_repo_path}")
+                logger.error(f"仓库是否存在: {self.official_repo_path.exists()}")
+                if self.official_repo_path.exists():
+                    logger.error(f"仓库中的文件/目录:")
+                    for item in list(self.official_repo_path.iterdir())[:10]:
+                        logger.error(f"  - {item.name} ({'dir' if item.is_dir() else 'file'})")
+                raise ImportError(
+                    f"无法找到推理文件。请检查仓库是否正确克隆。\n"
+                    f"仓库路径: {self.official_repo_path}\n"
+                    f"请运行: git clone https://github.com/index-tts/index-tts.git {self.official_repo_path}"
+                )
+            
             # 尝试多种可能的导入方式
             inference_module = None
             inference_class = None
             
-            # 方式1: 从官方仓库根目录导入
+            # 方式1: 直接从文件导入
             try:
-                from inference import IndexTTSInference
-                inference_class = IndexTTSInference
-                logger.debug("从 inference 模块导入成功")
-            except ImportError:
-                # 方式2: 从官方仓库子目录导入
+                import importlib.util
+                module_name = f"inference_{id(self)}"  # 唯一模块名
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    inference_file
+                )
+                inference_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(inference_module)
+                
+                # 尝试多种可能的类名
+                for class_name in ['IndexTTSInference', 'Inference', 'IndexTTS', 'TTSInference']:
+                    if hasattr(inference_module, class_name):
+                        inference_class = getattr(inference_module, class_name)
+                        logger.debug(f"找到推理类: {class_name}")
+                        break
+                
+                if inference_class is None:
+                    raise AttributeError("找不到推理类")
+                    
+            except Exception as e1:
+                # 方式2: 尝试作为模块导入
                 try:
-                    sys.path.insert(0, str(self.official_repo_path))
-                    from index_tts.inference import IndexTTSInference
+                    # 根据文件位置决定导入路径
+                    if 'index_tts' in str(inference_file):
+                        from index_tts.inference import IndexTTSInference
+                    else:
+                        from inference import IndexTTSInference
                     inference_class = IndexTTSInference
-                    logger.debug("从 index_tts.inference 导入成功")
-                except ImportError:
-                    # 方式3: 直接导入（如果代码在仓库根目录）
-                    try:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location(
-                            "inference",
-                            self.official_repo_path / "inference.py"
-                        )
-                        inference_module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(inference_module)
-                        inference_class = inference_module.IndexTTSInference
-                        logger.debug("从文件直接导入成功")
-                    except Exception as e:
-                        logger.error(f"所有导入方式都失败: {e}")
-                        raise ImportError("无法导入官方推理模块")
+                    logger.debug("从模块导入成功")
+                except ImportError as e2:
+                    logger.error(f"所有导入方式都失败:")
+                    logger.error(f"  文件导入失败: {e1}")
+                    logger.error(f"  模块导入失败: {e2}")
+                    raise ImportError("无法导入官方推理模块")
             
             # 初始化推理器
             # 尝试不同的初始化参数组合
