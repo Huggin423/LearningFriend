@@ -145,12 +145,12 @@ def main():
         print("  2. ModelScope (国内镜像，速度更快)")
     
     # 默认使用第一个可用方法
-    if has_hf_hub:
-        print("\n使用 HuggingFace Hub 下载...")
-        success = download_with_huggingface_hub()
-    elif has_modelscope:
+    if has_modelscope:
         print("\n使用 ModelScope 下载...")
         success = download_with_modelscope()
+    elif has_hf_hub:
+        print("\n使用 HuggingFace Hub 下载...")
+        success = download_with_huggingface_hub()
     else:
         success = False
     
