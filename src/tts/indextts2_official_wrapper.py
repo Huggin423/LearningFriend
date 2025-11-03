@@ -157,9 +157,17 @@ class IndexTTS2Official:
         ]
         
         # 检查可能的路径（ModelScope 可能下载到子目录）
+        # 注意：model_dir 可能是相对路径，需要解析为绝对路径
+        if not self.model_dir.is_absolute():
+            # 尝试相对于项目根目录
+            project_root = Path(__file__).parent.parent.parent
+            abs_model_dir = (project_root / self.model_dir).resolve()
+        else:
+            abs_model_dir = self.model_dir.resolve()
+        
         possible_paths = [
-            self.model_dir,
-            self.model_dir / "IndexTeam" / "IndexTTS-2",
+            abs_model_dir,
+            abs_model_dir / "IndexTeam" / "IndexTTS-2",
         ]
         
         # 找到实际的文件目录
@@ -170,8 +178,8 @@ class IndexTTS2Official:
                 break
         
         if actual_dir is None:
-            # 如果没有找到，使用默认路径
-            actual_dir = self.model_dir
+            # 如果没有找到，使用解析后的路径
+            actual_dir = abs_model_dir
         
         # 检查核心文件
         missing_files = []
@@ -204,8 +212,11 @@ class IndexTTS2Official:
             missing_files.append('qwen0.6bemo4-merge/model*.safetensors')
         
         # 如果文件在子目录中，更新 model_dir
-        if actual_dir != self.model_dir:
-            logger.info(f"检测到模型文件在子目录: {actual_dir.relative_to(self.model_dir)}")
+        if actual_dir != abs_model_dir:
+            logger.info(f"检测到模型文件在子目录: {actual_dir.relative_to(abs_model_dir)}")
+            self.model_dir = actual_dir
+        else:
+            # 更新为绝对路径
             self.model_dir = actual_dir
         
         if missing_files:

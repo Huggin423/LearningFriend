@@ -18,7 +18,7 @@ def download_with_huggingface_hub():
         from huggingface_hub import snapshot_download
         
         repo_id = "IndexTeam/IndexTTS-2"
-        local_dir = project_root / "checkpoints"
+        local_dir = project_root / "index-tts" / "checkpoints"
         
         print(f"开始从 {repo_id} 下载模型...")
         print(f"保存路径: {local_dir.absolute()}")
@@ -54,7 +54,7 @@ def download_with_modelscope():
         import shutil
         
         model_id = "IndexTeam/IndexTTS-2"
-        cache_dir = project_root / "checkpoints"
+        cache_dir = project_root / "index-tts" / "checkpoints"
         target_dir = cache_dir
         
         print(f"开始从 ModelScope 下载模型: {model_id}...")
@@ -117,12 +117,14 @@ def download_with_modelscope():
 
 def verify_download():
     """验证下载的文件"""
-    checkpoints_dir = project_root / "checkpoints"
+    checkpoints_dir = project_root / "index-tts" / "checkpoints"
     
     # 检查可能的路径（ModelScope 可能下载到子目录）
     possible_paths = [
         checkpoints_dir,
         checkpoints_dir / "IndexTeam" / "IndexTTS-2",
+        project_root / "checkpoints",  # 向后兼容旧路径
+        project_root / "checkpoints" / "IndexTeam" / "IndexTTS-2",
     ]
     
     # 必需的核心文件

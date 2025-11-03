@@ -63,6 +63,7 @@ htmlcov/
 
 # 其他
 FunASR/
+index-tts/
 *.pdf
 !requirements.txt
 

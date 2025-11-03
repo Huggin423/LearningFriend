@@ -44,22 +44,13 @@ llm:
     请用自然、口语化的方式回答，避免过长的回复（建议控制在100字以内）。
 
 # TTS配置 (IndexTTS2)
+# 使用 ModelScope 官方 IndexTTS2 模型
 tts:
-  # ========== 模型选择 ==========
-  use_official: true  # true: 使用官方模型（推荐）, false: 使用复现模型
-  # 注意：官方模型需要下载约5.9GB，首次使用会自动下载
-  
-  # ========== 官方模型配置（use_official=true时使用）==========
-  official_repo: "index-tts"           # 官方代码仓库路径（自动克隆）
-  model_path: "checkpoints"            # 官方模型路径（HuggingFace下载）
-  # 模型会自动从 https://huggingface.co/IndexTeam/IndexTTS-2 下载
-  
-  # ========== 复现模型配置（use_official=false时使用）==========
-  # model_path: "models/indextts2"     # 复现模型路径
-  # t2s_checkpoint: "models/indextts2/t2s_model.pth"
-  # s2m_checkpoint: "models/indextts2/s2m_model.pth"
-  # vocoder_checkpoint: "models/indextts2/vocoder.pth"
-  # t2e_checkpoint: "models/indextts2/t2e_model.pth"
+  # ========== 模型配置 ==========
+  # 模型路径（从 ModelScope 下载后会自动保存到这里）
+  model_path: "models/indextts2"
+  # 模型会自动从 ModelScope 下载：IndexTeam/IndexTTS-2
+  # 首次使用会自动下载约5.9GB
   
   # ========== 通用配置 ==========
   device: "cuda"  # cuda 或 cpu（自动检测）
@@ -68,18 +59,6 @@ tts:
   pitch: 1.0      # 音高：0.5-2.0（官方模型可能不支持）
   sample_rate: 22050  # 采样率
   emotion: "neutral"  # 默认情感
-  
-  # ========== 复现模型专用配置（仅use_official=false时生效）==========
-  # hop_length: 256
-  # n_mel_channels: 80
-  # vocab_size: 4096
-  # t2s_d_model: 512
-  # t2s_n_heads: 8
-  # t2s_n_layers: 12
-  # max_seq_length: 2048
-  # s2m_d_model: 512
-  # enable_emotion_control: true
-  # t2e_model: "Qwen-3-1.7b"
   
 # 对话管道配置
 conversation:
