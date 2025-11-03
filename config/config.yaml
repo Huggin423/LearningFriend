@@ -27,7 +27,7 @@ llm:
   # DeepSeek配置（硅基流动）
   deepseek:
     api_key: "sk-cqshjhsyysaccbhuqsqgbcaszdmtksadlnqhrxxddwzmvzfo"  # 硅基流动 API Key
-    base_url: "https://api.siliconflow.com/v1/chat/completions"  # 硅基流动API地址
+    base_url: "https://api.siliconflow.cn"  # 硅基流动API地址
     model: "deepseek-ai/DeepSeek-V3"  # DeepSeek-V3模型
     temperature: 0.7
     max_tokens: 2000
