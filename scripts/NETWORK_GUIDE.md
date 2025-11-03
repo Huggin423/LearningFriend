@@ -32,6 +32,7 @@
 **优点**：
 - ✅ 完全镜像 HuggingFace
 - ✅ 速度快，稳定性好
+- ✅ 支持所有HuggingFace模型
 
 **配置方法**：
 
@@ -53,6 +54,11 @@ export HF_ENDPOINT=https://hf-mirror.com
 # 下载模型
 python scripts/download_huggingface_models.sh
 ```
+
+**重要提示**：
+- 某些模型（如`funasr/campplus`）只在HuggingFace上，ModelScope不可用
+- 使用HF-Mirror可以下载所有HuggingFace模型
+- 推荐国内用户使用选项3（HF-Mirror）以获得最佳兼容性
 
 #### 其他 HuggingFace 镜像
 

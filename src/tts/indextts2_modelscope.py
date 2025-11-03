@@ -123,10 +123,10 @@ class IndexTTS2ModelScope:
         from modelscope.hub.snapshot_download import snapshot_download
         
         logger.info(f"Hub 模式：从 ModelScope 下载模型 {self.model_id}...")
-            
-            # 检查模型是否已下载
-            if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
-                logger.info("模型未找到，正在从 ModelScope 下载...")
+        
+        # 检查模型是否已下载
+        if not self.model_dir.exists() or not any(self.model_dir.iterdir()):
+            logger.info("模型未找到，正在从 ModelScope 下载...")
             try:
                 snapshot_download(
                     self.model_id, 
@@ -462,13 +462,13 @@ class IndexTTS2ModelScope:
                     if sr != self.sample_rate:
                         import librosa
                         audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sample_rate)
-                
-                # 转换为 float32
-                if audio.dtype != np.float32:
-                    audio = audio.astype(np.float32)
-                
-                logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
-                return audio
+                    
+                    # 转换为 float32
+                    if audio.dtype != np.float32:
+                        audio = audio.astype(np.float32)
+                    
+                    logger.info(f"合成成功，音频长度: {len(audio)/self.sample_rate:.2f}秒")
+                    return audio
                 else:
                     raise FileNotFoundError(f"生成的音频文件不存在: {output_path}")
                 

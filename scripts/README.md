@@ -149,6 +149,7 @@ bash scripts/download_huggingface_models.sh
 - ✅ 自动提示选择镜像源（HuggingFace/ModelScope/HF-Mirror）
 - ✅ 默认使用ModelScope镜像（推荐国内用户）
 - ✅ 支持HF-Mirror国内镜像
+- ⚠️ 注意：`funasr/campplus` 只在HuggingFace上，请使用选项3（HF-Mirror）
 
 #### 迁移和修复相关
 

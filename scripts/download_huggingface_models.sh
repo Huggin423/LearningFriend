@@ -18,10 +18,10 @@ fi
 echo ""
 echo "请选择下载方式："
 echo "  1) HuggingFace (国际用户)"
-echo "  2) ModelScope (国内镜像，推荐)"
-echo "  3) HF-Mirror (国内HuggingFace镜像)"
-read -p "请输入选项 (1/2/3，默认2): " choice
-choice=${choice:-2}
+echo "  2) ModelScope (国内镜像，但campplus不可用)"
+echo "  3) HF-Mirror (国内HuggingFace镜像，推荐国内用户)"
+read -p "请输入选项 (1/2/3，默认3): " choice
+choice=${choice:-3}
 
 # 设置镜像环境变量
 if [ "$choice" == "2" ]; then
@@ -29,16 +29,16 @@ if [ "$choice" == "2" ]; then
     echo "使用 ModelScope 镜像下载..."
     echo "提示：ModelScope 为国内镜像，下载速度更快"
     
-    # 使用ModelScope下载
-    models=(
+    # 使用ModelScope下载（只下载ModelScope上有的模型）
+    models_ms=(
         "facebook/w2v-bert-2.0"
         "amphion/MaskGCT"
-        "funasr/campplus"
     )
     
-    for model in "${models[@]}"; do
+    # 先从ModelScope下载
+    for model in "${models_ms[@]}"; do
         echo ""
-        echo "正在下载: $model"
+        echo "正在从ModelScope下载: $model"
         python3 -c "
 from modelscope.hub.snapshot_download import snapshot_download
 import os
@@ -51,6 +51,11 @@ except Exception as e:
     print(f'✗ 下载失败: {e}')
 "
     done
+    
+    # 提示：campplus需要使用HuggingFace
+    echo ""
+    echo "注意: funasr/campplus 在ModelScope上不可用"
+    echo "建议使用选项1或3从HuggingFace下载此模型"
     
 elif [ "$choice" == "3" ]; then
     echo ""
