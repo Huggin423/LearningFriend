@@ -244,10 +244,10 @@ class IndexTTS2Reimplement:
             # 从参考音频提取说话人特征
             mel = self.audio_processor.audio_to_mel(timbre_prompt)
             mel = torch.FloatTensor(mel).unsqueeze(0).to(self.device)
-            speaker_embedding = self.t2s_module.speaker_encoder(mel)
+            speaker_embedding = self.t2s_module.speaker_conditioner(mel)
         else:
             # 使用预定义的说话人ID
-            speaker_embedding = self.t2s_module.get_speaker_embedding(speaker_id)
+            speaker_embedding = self.t2s_module.speaker_conditioner.get_speaker_embedding(speaker_id)
         
         return speaker_embedding
     
@@ -262,7 +262,7 @@ class IndexTTS2Reimplement:
             # 从参考音频提取情感特征
             mel = self.audio_processor.audio_to_mel(style_prompt)
             mel = torch.FloatTensor(mel).unsqueeze(0).to(self.device)
-            emotion_embedding = self.t2s_module.emotion_encoder(mel)
+            emotion_embedding = self.t2s_module.emotion_conditioner(mel)
         elif self.t2e_module is not None and emotion:
             # 使用T2E模块从文本生成情感向量
             emotion_probs = self.t2e_module.predict_emotion(text if emotion == 'auto' else emotion)
@@ -270,7 +270,7 @@ class IndexTTS2Reimplement:
             emotion_embedding = emotion_embedding.to(self.device)
         else:
             # 使用默认中性情感
-            emotion_embedding = self.t2s_module.get_emotion_embedding('neutral')
+            emotion_embedding = self.t2s_module.emotion_conditioner.get_emotion_embedding('neutral')
         
         return emotion_embedding
     

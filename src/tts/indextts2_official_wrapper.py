@@ -73,16 +73,27 @@ class IndexTTS2Official:
             ], check=True)
             logger.info("✓ 仓库克隆成功")
             
-            # 安装依赖
-            logger.info("安装依赖...")
-            subprocess.run([
-                sys.executable, '-m', 'pip', 'install',
-                '-r', str(self.official_repo_path / 'requirements.txt')
-            ], check=True)
-            logger.info("✓ 依赖安装成功")
+            # 安装依赖（如果 requirements.txt 存在）
+            requirements_file = self.official_repo_path / 'requirements.txt'
+            if requirements_file.exists():
+                logger.info("安装依赖...")
+                try:
+                    subprocess.run([
+                        sys.executable, '-m', 'pip', 'install',
+                        '-r', str(requirements_file)
+                    ], check=True)
+                    logger.info("✓ 依赖安装成功")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"依赖安装失败: {str(e)}，将继续尝试加载模型")
+            else:
+                logger.warning(f"未找到 requirements.txt 文件: {requirements_file}")
+                logger.info("跳过依赖安装，将尝试直接使用官方代码")
             
         except subprocess.CalledProcessError as e:
             logger.error(f"克隆仓库失败: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"设置官方仓库时发生错误: {str(e)}")
             raise
     
     def _check_model_files(self) -> bool:
