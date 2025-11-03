@@ -72,7 +72,9 @@ class SpeakerConditioner(nn.Module):
     
     def get_speaker_embedding(self, speaker_id: int) -> torch.Tensor:
         """获取指定说话人的嵌入"""
-        return self.speaker_embeddings(torch.LongTensor([speaker_id])).squeeze(0)
+        # 确保在正确的设备上
+        device = next(self.parameters()).device
+        return self.speaker_embeddings(torch.LongTensor([speaker_id]).to(device)).squeeze(0)
 
 
 class EmotionConditioner(nn.Module):
@@ -115,7 +117,9 @@ class EmotionConditioner(nn.Module):
             'anger': 3, 'fear': 4, 'disgust': 5, 'surprise': 6
         }
         idx = emotion_map.get(emotion, 0)
-        return self.emotion_embeddings(torch.LongTensor([idx])).squeeze(0)
+        # 确保在正确的设备上
+        device = next(self.parameters()).device
+        return self.emotion_embeddings(torch.LongTensor([idx]).to(device)).squeeze(0)
 
 
 class TextToSemanticModule(nn.Module):

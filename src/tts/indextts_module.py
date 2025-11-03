@@ -257,6 +257,8 @@ class IndexTTS2Reimplement:
         else:
             # 使用预定义的说话人ID
             speaker_embedding = self.t2s_module.speaker_conditioner.get_speaker_embedding(speaker_id)
+            # 确保在正确的设备上
+            speaker_embedding = speaker_embedding.to(self.device)
             # 确保是2D张量 [1, d_model]
             if speaker_embedding.dim() == 1:
                 speaker_embedding = speaker_embedding.unsqueeze(0)
@@ -302,6 +304,8 @@ class IndexTTS2Reimplement:
         else:
             # 使用默认中性情感
             emotion_embedding = self.t2s_module.emotion_conditioner.get_emotion_embedding('neutral')
+            # 确保在正确的设备上
+            emotion_embedding = emotion_embedding.to(self.device)
             # 确保是2D张量 [1, d_model]
             if emotion_embedding.dim() == 1:
                 emotion_embedding = emotion_embedding.unsqueeze(0)
