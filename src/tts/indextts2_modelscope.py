@@ -168,31 +168,62 @@ class IndexTTS2ModelScope:
         # 查找配置文件
         config_path = None
         possible_config_paths = [
-            self.model_dir / "config.yaml",
-            self.model_dir / "IndexTeam" / "IndexTTS-2" / "config.yaml",
+            self.model_dir / "IndexTeam" / "IndexTTS-2" / "config.yaml",  # ModelScope 下载的标准路径
+            self.model_dir / "config.yaml",  # 直接路径
         ]
         
         for path in possible_config_paths:
             if path.exists():
                 config_path = path
-                logger.info(f"找到配置文件: {config_path}")
+                # 如果找到了 IndexTeam/IndexTTS-2 下的配置文件，更新 model_dir
+                if "IndexTeam" in str(path) and "IndexTTS-2" in str(path):
+                    # path 是 models/indextts2/IndexTeam/IndexTTS-2/config.yaml
+                    # 我们需要 model_dir 指向 IndexTTS-2 目录
+                    actual_model_dir = path.parent  # IndexTTS-2 目录
+                    self.model_dir = actual_model_dir.resolve()
+                    logger.info(f"找到配置文件: {config_path}")
+                    logger.info(f"更新模型目录为: {self.model_dir}")
+                    # 验证 Qwen 模型路径
+                    qwen_check = self.model_dir / "qwen0.6bemo4-merge"
+                    if qwen_check.exists():
+                        logger.info(f"✓ 验证通过：Qwen 模型路径存在: {qwen_check}")
+                    else:
+                        logger.warning(f"⚠ 警告：Qwen 模型路径不存在: {qwen_check}")
+                else:
+                    logger.info(f"找到配置文件: {config_path}")
                 break
         
         if config_path is None:
             # 如果找不到配置文件，尝试在模型目录的子目录中查找
+            logger.info(f"在标准位置未找到配置文件，搜索子目录...")
             for subdir in self.model_dir.iterdir():
                 if subdir.is_dir():
-                    sub_config = subdir / "config.yaml"
-                    if sub_config.exists():
-                        config_path = sub_config
-                        self.model_dir = subdir.resolve()  # 更新模型目录（使用绝对路径）
-                        logger.info(f"在子目录中找到配置文件: {config_path}")
-                        break
+                    # 检查 IndexTeam/IndexTTS-2 结构
+                    if subdir.name == "IndexTeam":
+                        index_tts_dir = subdir / "IndexTTS-2"
+                        if index_tts_dir.exists():
+                            sub_config = index_tts_dir / "config.yaml"
+                            if sub_config.exists():
+                                config_path = sub_config
+                                self.model_dir = index_tts_dir.resolve()  # 更新模型目录
+                                logger.info(f"在 IndexTeam/IndexTTS-2 目录中找到配置文件: {config_path}")
+                                logger.info(f"更新模型目录为: {self.model_dir}")
+                                break
+                    else:
+                        # 检查其他子目录
+                        sub_config = subdir / "config.yaml"
+                        if sub_config.exists():
+                            config_path = sub_config
+                            self.model_dir = subdir.resolve()  # 更新模型目录
+                            logger.info(f"在子目录中找到配置文件: {config_path}")
+                            logger.info(f"更新模型目录为: {self.model_dir}")
+                            break
         
         if config_path is None:
             raise FileNotFoundError(
                 f"找不到配置文件 config.yaml\n"
-                f"请检查模型目录: {self.model_dir}"
+                f"请检查模型目录: {self.model_dir}\n"
+                f"预期路径: {self.model_dir / 'IndexTeam' / 'IndexTTS-2' / 'config.yaml'}"
             )
         
         # 修复配置文件中的路径问题（如果 qwen_emo_path 末尾有斜杠）
@@ -259,6 +290,7 @@ class IndexTTS2ModelScope:
             raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
         
         # 检查 Qwen 模型路径（如果配置中有的话）
+        # 根据 IndexTTS2 的结构，qwen_emo_path 是相对路径，指向 model_dir 下的子目录
         qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
         if qwen_emo_expected.exists():
             qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
@@ -271,6 +303,14 @@ class IndexTTS2ModelScope:
                 logger.warning(f"  - tokenizer_config.json 不存在，可能会影响加载")
         else:
             logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
+            # 列出实际存在的子目录，帮助调试
+            logger.info(f"模型目录下的子目录:")
+            try:
+                for item in model_dir_path.iterdir():
+                    if item.is_dir():
+                        logger.info(f"  - {item.name}/")
+            except Exception as e:
+                logger.warning(f"无法列出目录内容: {e}")
         
         # 初始化 IndexTTS2（本地模式）
         logger.info("正在初始化 IndexTTS2（使用本地模型路径）...")
