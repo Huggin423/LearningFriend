@@ -111,6 +111,34 @@ class IndexTTS2ModelScope:
                     f"请检查模型目录: {self.model_dir}"
                 )
             
+            # 修复配置文件中的路径问题（如果 qwen_emo_path 末尾有斜杠）
+            # 读取并修复配置文件，确保路径格式正确
+            try:
+                import yaml
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config_content = yaml.safe_load(f)
+                
+                # 检查并修复 qwen_emo_path
+                if config_content and 'qwen_emo_path' in config_content:
+                    qwen_path = config_content['qwen_emo_path']
+                    if isinstance(qwen_path, str) and qwen_path.endswith('/'):
+                        # 移除末尾斜杠
+                        config_content['qwen_emo_path'] = qwen_path.rstrip('/')
+                        # 创建临时配置文件
+                        import tempfile
+                        temp_config = tempfile.NamedTemporaryFile(
+                            mode='w', 
+                            suffix='.yaml', 
+                            delete=False,
+                            dir=str(Path(config_path).parent)
+                        )
+                        yaml.dump(config_content, temp_config, default_flow_style=False, allow_unicode=True)
+                        temp_config.close()
+                        config_path = Path(temp_config.name)
+                        logger.info(f"已修复配置文件中的路径，使用临时配置文件: {config_path}")
+            except Exception as e:
+                logger.warning(f"无法修复配置文件路径: {e}，使用原始配置文件")
+            
             # 添加 index-tts 到 Python 路径
             project_root = Path(__file__).parent.parent.parent
             indextts_path = project_root / "index-tts"
@@ -125,17 +153,36 @@ class IndexTTS2ModelScope:
             logger.info("使用 IndexTTS2 官方代码加载模型...")
             from indextts.infer_v2 import IndexTTS2
             
-            # 确保使用绝对路径
+            # 确保使用绝对路径，并移除尾随斜杠
             config_path_abs = Path(config_path).resolve()
             model_dir_abs = Path(self.model_dir).resolve()
             
-            logger.info(f"使用配置文件: {config_path_abs}")
-            logger.info(f"使用模型目录: {model_dir_abs}")
+            # 移除路径末尾的斜杠，避免 transformers 误判
+            # 使用 Path 对象避免手动处理斜杠问题
+            model_dir_str = str(model_dir_abs).rstrip('/\\')  # 同时移除 Unix 和 Windows 路径分隔符
+            config_path_str = str(config_path_abs)
+            
+            logger.info(f"使用配置文件: {config_path_str}")
+            logger.info(f"使用模型目录: {model_dir_str}")
+            
+            # 验证模型目录存在必要的文件
+            model_dir_path = Path(model_dir_str)
+            if not model_dir_path.exists():
+                raise FileNotFoundError(f"模型目录不存在: {model_dir_str}")
+            
+            # 检查 Qwen 模型路径（如果配置中有的话）
+            # 这里无法直接读取配置文件，但可以在日志中提示
+            qwen_emo_expected = model_dir_path / "qwen0.6bemo4-merge"
+            if qwen_emo_expected.exists():
+                qwen_emo_path_str = str(qwen_emo_expected).rstrip('/\\')
+                logger.info(f"检测到 Qwen 模型路径: {qwen_emo_path_str}")
+            else:
+                logger.warning(f"未找到预期的 Qwen 模型路径: {qwen_emo_expected}")
             
             # 初始化 IndexTTS2
             self.tts_model = IndexTTS2(
-                cfg_path=str(config_path_abs),
-                model_dir=str(model_dir_abs),
+                cfg_path=config_path_str,
+                model_dir=model_dir_str,
                 use_fp16=self.config.get('use_fp16', False),
                 device=self.device,
                 use_cuda_kernel=self.config.get('use_cuda_kernel', None),
