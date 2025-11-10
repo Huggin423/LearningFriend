@@ -1,0 +1,17 @@
+# API服务依赖安装和启动脚本
+
+# FastAPI和相关依赖
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+
+# 数据处理
+pyyaml>=6.0
+requests>=2.31.0
+
+# 现有项目依赖（如果还没安装）
+numpy
+torch
+funasr
+openai
